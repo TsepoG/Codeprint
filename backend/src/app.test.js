@@ -8,3 +8,16 @@ test('GET /health returns ok status', async () => {
   assert.equal(res.status, 200);
   assert.deepEqual(res.body, { status: 'ok' });
 });
+
+test('POST /api/scan rejects a missing repoUrl', async () => {
+  const res = await request(app).post('/api/scan').send({});
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /repoUrl/);
+});
+
+test('POST /api/scan rejects a non-GitHub repoUrl', async () => {
+  const res = await request(app)
+    .post('/api/scan')
+    .send({ repoUrl: 'file:///etc/passwd' });
+  assert.equal(res.status, 400);
+});
