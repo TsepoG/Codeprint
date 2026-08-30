@@ -7,11 +7,12 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "lint": "eslint .",
-    "test": "c8 --reporter=lcov --reporter=text node --test",
+    "test": "c8 --reporter=lcov --reporter=text node --import ./src/testEnv.js --test",
     "build": "node --check src/index.js && node --check src/app.js"
   },
   "dependencies": {
     "@eslint/js": "^10.0.1",
+    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "eslint": "^10.9.1",

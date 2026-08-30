@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { runScan, isValidRepoUrl } from '../services/scan/dockerRunner.js';
 import { ScanTimeoutError, CloneError, RepoTooLargeError } from '../services/scan/errors.js';
 import { createJob, getJob, markJobRunning, completeJob, failJob } from '../services/scan/jobStore.js';
+import { insertScan } from '../db/index.js';
 
 const router = Router();
 
@@ -30,7 +31,10 @@ const scanLimiter = rateLimit({
  * returns immediately - the actual scan (clone + eslint/madge/jscpd/npm
  * audit across two short-lived Docker containers; see
  * `services/scan/dockerRunner.js`) runs in the background. Poll
- * `GET /api/scan/:jobId` for the result.
+ * `GET /api/scan/:jobId` for the result. Once the job reaches a terminal
+ * state (complete or failed), it's also persisted to the `scans` table
+ * (see `db/index.js`) - browse past scans via `GET /api/scans` and
+ * `GET /api/scans/:id` (`routes/scans.js`).
  *
  * Responses: 202 with `{ jobId, status: 'queued' }` on acceptance, 400
  * for an invalid `repoUrl`, 429 if rate-limited.
@@ -50,8 +54,33 @@ router.post('/scan', scanLimiter, (req, res) => {
 
   markJobRunning(job.id);
   runScan(repoUrl)
-    .then((result) => completeJob(job.id, result))
-    .catch((err) => failJob(job.id, describeFailure(err)));
+    .then((result) => {
+      completeJob(job.id, result);
+      insertScan({
+        id: job.id,
+        repoUrl,
+        branch: result.branch,
+        commitSha: result.commitSha,
+        startedAt: job.createdAt,
+        completedAt: Date.now(),
+        status: 'complete',
+        result,
+      });
+    })
+    .catch((err) => {
+      const message = describeFailure(err);
+      failJob(job.id, message);
+      insertScan({
+        id: job.id,
+        repoUrl,
+        branch: null,
+        commitSha: null,
+        startedAt: job.createdAt,
+        completedAt: Date.now(),
+        status: 'failed',
+        result: null,
+      });
+    });
 });
 
 /**

@@ -53,8 +53,12 @@ const ERROR_CLASSES = { CloneError, ScanTimeoutError, RepoTooLargeError };
  * and env-forwarded timeouts/limits, and the only output is the JSON line
  * each phase prints to stdout. See README security notes.
  *
+ * The returned result also carries `branch`/`commitSha` (whatever
+ * `clonePhase` checked out) alongside the normalized scan shape, for
+ * `routes/scan.js` to persist as scan history.
+ *
  * @param {string} repoUrl A URL that has already passed {@link isValidRepoUrl}.
- * @returns {Promise<ReturnType<typeof import('./normalize.js').normalizeScanResults>>}
+ * @returns {Promise<ReturnType<typeof import('./normalize.js').normalizeScanResults> & {branch: string|null, commitSha: string|null}>}
  * @throws {CloneError} If the clone fails.
  * @throws {RepoTooLargeError} If the repo exceeds the configured size cap.
  * @throws {ScanTimeoutError} If the scan (or the host-side wait on it) times out.
@@ -98,7 +102,11 @@ export async function runScan(repoUrl) {
     });
     throwIfFailed(analyzePayload);
 
-    return analyzePayload.result;
+    return {
+      ...analyzePayload.result,
+      branch: clonePayload.result.branch,
+      commitSha: clonePayload.result.commitSha,
+    };
   } catch (err) {
     if (controller.signal.aborted) {
       throw new ScanTimeoutError();

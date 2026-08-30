@@ -31,6 +31,15 @@ This is a monorepo with two packages:
    cd frontend && npm run dev
    ```
 
+## API
+
+- `POST /api/scan` - body `{ repoUrl }`, returns `202 { jobId, status: 'queued' }` immediately; the scan runs in the background (see the security section below).
+- `GET /api/scan/:jobId` - poll for the job's status: `{ status: 'queued'|'running' }` while in progress, `{ status: 'complete', result }` or `{ status: 'failed', error }` once done. 404 once the in-memory job entry expires (`SCAN_JOB_TTL_MS`, default 30 minutes).
+- `GET /api/scans?repoUrl=&page=&pageSize=` - lists **persisted** scan history, most recent first, paginated (`{ scans, total, page, pageSize }`). Each entry is a summary (`metrics`, `avgComplexity`) rather than the full result.
+- `GET /api/scans/:id` - one persisted scan's full record, including its complete result.
+
+Every scan that reaches a terminal state (complete or failed) is written to a SQLite database (`better-sqlite3`, no separate DB server) at `DB_PATH` (default `backend/data/codeprint.db`, created automatically) - this is what survives a backend restart and what the frontend's History tab reads from. The live job store (`GET /api/scan/:jobId`) is separate and still in-memory/ephemeral, since it only needs to answer "is this specific run done yet" for as long as a client might be polling it.
+
 ## Security: `POST /api/scan` runs tools against untrusted, cloned code
 
 The scan endpoint shallow-clones an arbitrary repo and runs eslint,
