@@ -14,6 +14,22 @@ function scanRepo(url) {
   fireEvent.click(screen.getByRole('button', { name: /scan repository/i }))
 }
 
+/**
+ * Mocks the POST /api/scan -> GET /api/scan/:jobId polling sequence: the
+ * first fetch call (identified by method: 'POST') resolves with `post`,
+ * every subsequent call (a GET poll) resolves with the next entry in
+ * `gets` in order (repeating the last one past the end).
+ */
+function mockFetchSequence({ post, gets }) {
+  let pollIndex = 0
+  global.fetch = vi.fn((_url, opts) => {
+    if (opts?.method === 'POST') return Promise.resolve(post)
+    const response = gets[Math.min(pollIndex, gets.length - 1)]
+    pollIndex += 1
+    return Promise.resolve(response)
+  })
+}
+
 describe('CodebaseDashboard', () => {
   beforeEach(() => {
     global.fetch = vi.fn()
@@ -28,37 +44,79 @@ describe('CodebaseDashboard', () => {
     expect(screen.getByText(/enter a public github repository url/i)).toBeInTheDocument()
   })
 
-  it('shows a loading state while the scan is in flight', async () => {
-    let resolveFetch
-    global.fetch.mockReturnValue(new Promise((resolve) => { resolveFetch = resolve }))
+  it('shows a queued state as soon as the scan is submitted', async () => {
+    global.fetch.mockReturnValue(new Promise(() => {})) // POST never resolves in this test
 
     render(<CodebaseDashboard />)
     scanRepo('https://github.com/owner/repo')
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/cloning and analyzing/i)
-
-    resolveFetch({ ok: true, json: async () => SCAN_RESULT })
+    expect(await screen.findByRole('status')).toHaveTextContent(/waiting for the scan to start/i)
   })
 
-  it('renders metrics, files, and the dependency graph on success', async () => {
-    global.fetch.mockResolvedValue({ ok: true, json: async () => SCAN_RESULT })
+  // These two use real timers rather than fake ones - the poll loop chains
+  // several `await`s per cycle, and Vitest's fake-timer microtask flushing
+  // doesn't reliably keep pace with that depth (nor does testing-library's
+  // own findBy/waitFor polling, which is itself setTimeout-based and would
+  // also be paused by fake timers). Real timers + a generous findBy
+  // timeout is slower but far more robust here.
 
-    render(<CodebaseDashboard />)
-    scanRepo('https://github.com/owner/repo')
+  it(
+    'polls the job until it completes, then renders metrics, files, and the dependency graph',
+    async () => {
+      mockFetchSequence({
+        post: { ok: true, json: async () => ({ jobId: 'job-1', status: 'queued' }) },
+        gets: [
+          { ok: true, json: async () => ({ status: 'running' }) },
+          { ok: true, json: async () => ({ status: 'complete', result: SCAN_RESULT }) },
+        ],
+      })
 
-    expect(await screen.findByText('src/index.js', { selector: 'td' })).toBeInTheDocument()
-    expect(screen.getByText('12.5%')).toBeInTheDocument()
-    expect(screen.getByText(/no package-lock\.json found/i)).toBeInTheDocument()
-    expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/scan'),
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ repoUrl: 'https://github.com/owner/repo' }),
-      }),
-    )
-  })
+      render(<CodebaseDashboard />)
+      scanRepo('https://github.com/owner/repo')
 
-  it('shows an error message when the backend rejects the request', async () => {
+      // findByRole('status') alone would resolve immediately against the
+      // *queued* panel (it exists from the start) without ever waiting for
+      // the text to change - wait for the specific "running" text instead.
+      expect(await screen.findByText(/cloning and analyzing/i, {}, { timeout: 8000 })).toBeInTheDocument()
+      expect(
+        await screen.findByText('src/index.js', { selector: 'td' }, { timeout: 8000 }),
+      ).toBeInTheDocument()
+      expect(screen.getByText('12.5%')).toBeInTheDocument()
+      expect(screen.getByText(/no package-lock\.json found/i)).toBeInTheDocument()
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/scan'),
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ repoUrl: 'https://github.com/owner/repo' }),
+        }),
+      )
+      expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/scan/job-1'))
+    },
+    15000,
+  )
+
+  it(
+    'shows an error state when the job fails',
+    async () => {
+      mockFetchSequence({
+        post: { ok: true, json: async () => ({ jobId: 'job-2', status: 'queued' }) },
+        gets: [
+          { ok: true, json: async () => ({ status: 'failed', error: 'Could not clone repository: not found' }) },
+        ],
+      })
+
+      render(<CodebaseDashboard />)
+      scanRepo('https://github.com/owner/repo')
+
+      expect(await screen.findByRole('alert', {}, { timeout: 8000 })).toHaveTextContent(
+        /could not clone repository/i,
+      )
+    },
+    15000,
+  )
+
+  it('shows an error message when the initial POST is rejected', async () => {
     global.fetch.mockResolvedValue({
       ok: false,
       status: 400,

@@ -1,9 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import './CodebaseDashboard.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
 const MAX_GRAPH_NODES = 60
+const POLL_INTERVAL_MS = 2500
+
+const STATUS_MESSAGES = {
+  queued: 'Waiting for the scan to start…',
+  running: 'Cloning and analyzing the repository - this can take a few minutes…',
+}
 
 const SEVERITY = {
   high: { label: 'High', className: 'critical' },
@@ -157,17 +163,64 @@ function DependencyGraph({ nodes, edges }) {
 
 function CodebaseDashboard() {
   const [repoUrl, setRepoUrl] = useState('')
-  const [status, setStatus] = useState('idle') // idle | loading | success | error
+  const [status, setStatus] = useState('idle') // idle | queued | running | success | error
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
+
+  // Tracks the in-flight poll loop so a new scan (or unmount) can cancel a
+  // previous one instead of letting it keep updating state in the background.
+  const pollTokenRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (pollTokenRef.current) pollTokenRef.current.cancelled = true
+    }
+  }, [])
+
+  async function pollJob(jobId, token) {
+    if (token.cancelled) return
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/scan/${jobId}`)
+      const body = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(body?.error || `Checking scan status failed with status ${response.status}`)
+      }
+      if (token.cancelled) return
+
+      if (body.status === 'complete') {
+        setResult(body.result)
+        setStatus('success')
+        return
+      }
+      if (body.status === 'failed') {
+        setError(body.error || 'Scan failed.')
+        setStatus('error')
+        return
+      }
+
+      setStatus(body.status) // 'queued' or 'running'
+      setTimeout(() => pollJob(jobId, token), POLL_INTERVAL_MS)
+    } catch (err) {
+      if (token.cancelled) return
+      setError(err.message || 'Lost connection while checking the scan status.')
+      setStatus('error')
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
     const trimmed = repoUrl.trim()
     if (!trimmed) return
 
-    setStatus('loading')
+    if (pollTokenRef.current) pollTokenRef.current.cancelled = true
+    const token = { cancelled: false }
+    pollTokenRef.current = token
+
+    setStatus('queued')
     setError(null)
+    setResult(null)
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/scan`, {
@@ -181,14 +234,17 @@ function CodebaseDashboard() {
       if (!response.ok) {
         throw new Error(body?.error || `Scan failed with status ${response.status}`)
       }
+      if (token.cancelled) return
 
-      setResult(body)
-      setStatus('success')
+      setTimeout(() => pollJob(body.jobId, token), POLL_INTERVAL_MS)
     } catch (err) {
-      setError(err.message || 'Something went wrong while scanning this repository.')
+      if (token.cancelled) return
+      setError(err.message || 'Something went wrong while starting the scan.')
       setStatus('error')
     }
   }
+
+  const isBusy = status === 'queued' || status === 'running'
 
   return (
     <div className="dashboard">
@@ -210,18 +266,18 @@ function CodebaseDashboard() {
           placeholder="https://github.com/owner/repo"
           value={repoUrl}
           onChange={(event) => setRepoUrl(event.target.value)}
-          disabled={status === 'loading'}
+          disabled={isBusy}
           required
         />
-        <button type="submit" disabled={status === 'loading' || repoUrl.trim() === ''}>
-          {status === 'loading' ? 'Scanning…' : 'Scan repository'}
+        <button type="submit" disabled={isBusy || repoUrl.trim() === ''}>
+          {isBusy ? 'Scanning…' : 'Scan repository'}
         </button>
       </form>
 
-      {status === 'loading' && (
+      {isBusy && (
         <div className="status-panel loading-panel" role="status" aria-live="polite">
           <span className="spinner" aria-hidden="true" />
-          Cloning and analyzing the repository - this can take a minute…
+          {STATUS_MESSAGES[status]}
         </div>
       )}
 

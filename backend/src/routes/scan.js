@@ -2,6 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { runScan, isValidRepoUrl } from '../services/scan/dockerRunner.js';
 import { ScanTimeoutError, CloneError, RepoTooLargeError } from '../services/scan/errors.js';
+import { createJob, getJob, markJobRunning, completeJob, failJob } from '../services/scan/jobStore.js';
 
 const router = Router();
 
@@ -25,18 +26,16 @@ const scanLimiter = rateLimit({
  * or `https://gitlab.com/<owner>/<repo>`.
  *
  * Rate-limited per IP (`SCAN_RATE_LIMIT_MAX` requests per
- * `SCAN_RATE_LIMIT_WINDOW_MS`). Runs the scan (clone + eslint/madge/jscpd/
- * npm audit) across two short-lived Docker containers - see
- * `services/scan/dockerRunner.js` for the container orchestration,
- * `services/scan/index.js` for the pipeline that actually runs inside
- * them, and `services/scan/normalize.js` for the
- * `{ metrics, files, dependencyGraph, warnings }` response shape.
+ * `SCAN_RATE_LIMIT_WINDOW_MS`). Validates the URL, creates a job, and
+ * returns immediately - the actual scan (clone + eslint/madge/jscpd/npm
+ * audit across two short-lived Docker containers; see
+ * `services/scan/dockerRunner.js`) runs in the background. Poll
+ * `GET /api/scan/:jobId` for the result.
  *
- * Responses: 200 on success, 400 for an invalid `repoUrl`, 413 if the repo
- * exceeds the size cap, 422 if the clone fails, 429 if rate-limited, 504
- * if the scan times out, 502 for anything else.
+ * Responses: 202 with `{ jobId, status: 'queued' }` on acceptance, 400
+ * for an invalid `repoUrl`, 429 if rate-limited.
  */
-router.post('/scan', scanLimiter, async (req, res) => {
+router.post('/scan', scanLimiter, (req, res) => {
   const { repoUrl } = req.body ?? {};
 
   if (!isValidRepoUrl(repoUrl)) {
@@ -46,22 +45,54 @@ router.post('/scan', scanLimiter, async (req, res) => {
     });
   }
 
-  try {
-    const result = await runScan(repoUrl);
-    return res.json(result);
-  } catch (err) {
-    if (err instanceof ScanTimeoutError) {
-      return res.status(504).json({ error: 'Scan timed out' });
-    }
-    if (err instanceof RepoTooLargeError) {
-      return res.status(413).json({ error: 'Repository too large to scan', detail: err.message });
-    }
-    if (err instanceof CloneError) {
-      return res.status(422).json({ error: 'Could not clone repository', detail: err.message });
-    }
-    console.error('Unexpected scan failure:', err);
-    return res.status(502).json({ error: 'Failed to scan repository' });
-  }
+  const job = createJob();
+  res.status(202).json({ jobId: job.id, status: job.status });
+
+  markJobRunning(job.id);
+  runScan(repoUrl)
+    .then((result) => completeJob(job.id, result))
+    .catch((err) => failJob(job.id, describeFailure(err)));
 });
+
+/**
+ * GET /api/scan/:jobId
+ *
+ * Polls the status of a job created by `POST /api/scan`. Jobs are kept
+ * in memory for `SCAN_JOB_TTL_MS` (default 30 minutes) after creation
+ * and then swept - polling an expired (or never-existent) job id returns
+ * 404.
+ *
+ * Responses: `{ status: 'queued'|'running' }` while in progress,
+ * `{ status: 'complete', result }` once done (`result` is the
+ * `{ metrics, files, dependencyGraph, warnings }` shape from
+ * `services/scan/normalize.js`), `{ status: 'failed', error }` if the
+ * scan failed, all with HTTP 200; 404 if the job id is unknown/expired.
+ */
+router.get('/scan/:jobId', (req, res) => {
+  const job = getJob(req.params.jobId);
+
+  if (!job) {
+    return res.status(404).json({ error: 'No scan job found with that ID (it may have expired)' });
+  }
+
+  const body = { status: job.status };
+  if (job.status === 'complete') body.result = job.result;
+  if (job.status === 'failed') body.error = job.error;
+  return res.json(body);
+});
+
+/**
+ * Turns a `runScan` rejection into the message stored on a failed job.
+ *
+ * @param {Error} err
+ * @returns {string}
+ */
+function describeFailure(err) {
+  if (err instanceof ScanTimeoutError) return 'Scan timed out';
+  if (err instanceof RepoTooLargeError) return `Repository too large to scan: ${err.message}`;
+  if (err instanceof CloneError) return `Could not clone repository: ${err.message}`;
+  console.error('Unexpected scan failure:', err);
+  return 'Failed to scan repository';
+}
 
 export default router;
