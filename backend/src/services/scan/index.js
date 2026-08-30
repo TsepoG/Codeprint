@@ -1,76 +1,93 @@
-import { createScanDir, cleanupScanDir } from './tempDir.js';
-import { cloneRepo, isValidGithubUrl } from './clone.js';
+import { cloneRepo } from './clone.js';
+import { getDirectorySize } from './diskUsage.js';
 import { runEslint } from './tools/eslint.js';
 import { runMadge } from './tools/madge.js';
 import { runJscpd } from './tools/jscpd.js';
 import { runNpmAudit } from './tools/npmAudit.js';
 import { normalizeScanResults } from './normalize.js';
-import { ScanTimeoutError } from './errors.js';
+import { RepoTooLargeError } from './errors.js';
 
 const CLONE_TIMEOUT_MS = Number(process.env.SCAN_CLONE_TIMEOUT_MS) || 30_000;
 const TOOL_TIMEOUT_MS = Number(process.env.SCAN_TOOL_TIMEOUT_MS) || 60_000;
-const TOTAL_TIMEOUT_MS = Number(process.env.SCAN_TOTAL_TIMEOUT_MS) || 120_000;
+const MAX_REPO_SIZE_BYTES = (Number(process.env.SCAN_MAX_REPO_SIZE_MB) || 500) * 1024 * 1024;
 
-export { isValidGithubUrl };
+// This whole module is the actual scan logic - it clones an arbitrary,
+// untrusted repo and runs tools against it, so it must only ever run
+// inside the sandboxed scan-runner container (see container/clonePhase.js
+// and container/analyzePhase.js, and ../../../Dockerfile.scan-runner),
+// never directly in the backend's own process. The backend process itself
+// calls `runScan` from `./dockerRunner.js` instead, which orchestrates two
+// short-lived containers and never touches a cloned repo's files or
+// dependencies on the host. See README security notes.
+//
+// The pipeline is split across two containers with different network
+// access, so it's split across two functions here too:
+//   - clonePhase runs in a *network-enabled* container: it's the only
+//     step that needs to reach the repo host, and npm audit is the only
+//     *tool* that needs network access (to query the advisory database).
+//   - analyzePhase runs in a *network-disabled* (`--network none`)
+//     container: eslint/madge/jscpd are pure static analysis over files
+//     already on disk and never need network access, so denying it
+//     entirely means a malicious repo can't exfiltrate anything or reach
+//     other hosts during this phase even if one of these tools has an
+//     RCE-class bug.
 
 /**
- * Runs a full repo scan: clone, then eslint/madge/jscpd/npm-audit
- * concurrently, then normalize into the unified response shape. Always
- * cleans up the temp clone, and always enforces
- * `SCAN_TOTAL_TIMEOUT_MS` across the whole operation regardless of how far
- * it got.
- *
- * This is the actual scan logic - it clones an arbitrary, untrusted repo
- * and runs tools against it, so it must only ever run inside the sandboxed
- * scan-runner container (see `container/entrypoint.js` and
- * `../../../Dockerfile.scan-runner`), never directly in the backend's own
- * process. The backend process itself calls `runScan` from
- * `./dockerRunner.js` instead, which shells out to `docker run` and never
- * touches a cloned repo's files or dependencies on the host. See README
- * security notes.
- *
- * @param {string} repoUrl A URL that has already passed {@link isValidGithubUrl}.
- * @returns {Promise<ReturnType<typeof import('./normalize.js').normalizeScanResults>>}
- * @throws {import('./errors.js').CloneError} If the clone fails.
- * @throws {import('./errors.js').ScanTimeoutError} If the scan exceeds its overall timeout.
+ * @typedef {object} ClonePhaseResult
+ * @property {import('./tools/npmAudit.js').NpmAuditOk|{ok: false, reason: string}} auditResult
  */
-export async function scanRepoInProcess(repoUrl) {
-  const targetDir = await createScanDir();
-  const controller = new AbortController();
-  const overallTimer = setTimeout(
-    () => controller.abort(new ScanTimeoutError()),
-    TOTAL_TIMEOUT_MS,
-  );
 
-  try {
-    await cloneRepo(repoUrl, targetDir, {
-      timeoutMs: CLONE_TIMEOUT_MS,
-      signal: controller.signal,
-    });
+/**
+ * Clones `repoUrl` into `workspaceDir`, enforces the repo size cap, and
+ * runs npm audit (the one tool that needs network access). Intended to
+ * run inside a network-enabled, otherwise-locked-down container.
+ *
+ * @param {string} repoUrl A URL that has already passed `isValidRepoUrl`.
+ * @param {string} workspaceDir Empty directory to clone into (a shared
+ *   volume mount, so `analyzePhase` - in a *different* container - can
+ *   read the same files back out).
+ * @returns {Promise<ClonePhaseResult>}
+ * @throws {import('./errors.js').CloneError} If the clone fails.
+ * @throws {RepoTooLargeError} If the cloned repo exceeds `SCAN_MAX_REPO_SIZE_MB`.
+ */
+export async function clonePhase(repoUrl, workspaceDir) {
+  await cloneRepo(repoUrl, workspaceDir, { timeoutMs: CLONE_TIMEOUT_MS });
 
-    const toolOpts = { timeoutMs: TOOL_TIMEOUT_MS, signal: controller.signal };
-
-    // Every tool runner already catches its own failures internally and
-    // resolves with { ok: false, reason }. The .catch below is just a
-    // last-resort net so one tool crashing unexpectedly can never take
-    // down the whole scan.
-    const [eslintResult, madgeResult, jscpdResult, auditResult] = await Promise.all([
-      runEslint(targetDir, toolOpts).catch((err) => asSkipped('eslint', err)),
-      runMadge(targetDir, toolOpts).catch((err) => asSkipped('madge', err)),
-      runJscpd(targetDir, toolOpts).catch((err) => asSkipped('jscpd', err)),
-      runNpmAudit(targetDir, toolOpts).catch((err) => asSkipped('npm audit', err)),
-    ]);
-
-    return normalizeScanResults({ eslintResult, madgeResult, jscpdResult, auditResult, targetDir });
-  } catch (err) {
-    if (controller.signal.aborted) {
-      throw new ScanTimeoutError();
-    }
-    throw err;
-  } finally {
-    clearTimeout(overallTimer);
-    await cleanupScanDir(targetDir);
+  const sizeBytes = await getDirectorySize(workspaceDir);
+  if (sizeBytes > MAX_REPO_SIZE_BYTES) {
+    const sizeMb = Math.round(sizeBytes / (1024 * 1024));
+    const maxMb = Math.round(MAX_REPO_SIZE_BYTES / (1024 * 1024));
+    throw new RepoTooLargeError(`Repository is ~${sizeMb}MB, which exceeds the ${maxMb}MB scan limit`);
   }
+
+  const auditResult = await runNpmAudit(workspaceDir, { timeoutMs: TOOL_TIMEOUT_MS });
+  return { auditResult };
+}
+
+/**
+ * Runs eslint/madge/jscpd against the already-cloned `workspaceDir` and
+ * produces the final unified response, folding in `auditResult` from
+ * `clonePhase` (which ran in a separate, network-enabled container).
+ * Intended to run inside a `--network none` container.
+ *
+ * @param {string} workspaceDir Absolute path to the cloned repo (as populated by `clonePhase`).
+ * @param {import('./tools/npmAudit.js').NpmAuditOk|{ok: false, reason: string}} auditResult
+ * @returns {Promise<ReturnType<typeof normalizeScanResults>>}
+ */
+export async function analyzePhase(workspaceDir, auditResult) {
+  const toolOpts = { timeoutMs: TOOL_TIMEOUT_MS };
+
+  // Every tool runner already catches its own failures internally and
+  // resolves with { ok: false, reason }. The .catch below is just a
+  // last-resort net so one tool crashing unexpectedly can never take
+  // down the whole scan.
+  const [eslintResult, madgeResult, jscpdResult] = await Promise.all([
+    runEslint(workspaceDir, toolOpts).catch((err) => asSkipped('eslint', err)),
+    runMadge(workspaceDir, toolOpts).catch((err) => asSkipped('madge', err)),
+    runJscpd(workspaceDir, toolOpts).catch((err) => asSkipped('jscpd', err)),
+  ]);
+
+  return normalizeScanResults({ eslintResult, madgeResult, jscpdResult, auditResult, targetDir: workspaceDir });
 }
 
 /**

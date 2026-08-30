@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import { runNodeBin } from '../runTool.js';
 
@@ -16,7 +18,10 @@ import { runNodeBin } from '../runTool.js';
  * @returns {Promise<JscpdOk|{ok: false, reason: string}>} Never throws.
  */
 export async function runJscpd(targetDir, { timeoutMs, signal } = {}) {
-  const outDir = path.join(targetDir, '.codeprint-jscpd');
+  // The report goes to a scratch dir *outside* targetDir, not a
+  // `.codeprint-jscpd` subfolder inside it - targetDir may be a read-only
+  // mount (see the analyze-phase container in dockerRunner.js).
+  const outDir = path.join(tmpdir(), `codeprint-jscpd-${randomUUID()}`);
 
   await runNodeBin(
     'jscpd',
@@ -25,7 +30,7 @@ export async function runJscpd(targetDir, { timeoutMs, signal } = {}) {
       '--reporters', 'json',
       '--output', outDir,
       '--silent',
-      '--ignore', '**/node_modules/**,**/.codeprint-jscpd/**',
+      '--ignore', '**/node_modules/**',
     ],
     { timeoutMs, signal },
   );

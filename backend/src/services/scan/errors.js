@@ -24,3 +24,12 @@ export class CloneError extends Error {
     this.name = 'CloneError';
   }
 }
+
+/** Thrown when a repo exceeds the configured scan size cap (`SCAN_MAX_REPO_SIZE_MB`). */
+export class RepoTooLargeError extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'RepoTooLargeError';
+  }
+}

@@ -1,24 +1,56 @@
 import { runCommand } from './runTool.js';
 import { CloneError } from './errors.js';
 
-// Only allow plain https://github.com/<owner>/<repo> URLs. This blocks
-// git's non-http transports (file://, ext::, ssh with arbitrary hosts)
-// which could otherwise be abused to read local paths or reach internal
-// network hosts (SSRF-style) via the clone step.
-const GITHUB_HTTPS_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+?(?:\.git)?\/?$/;
+// Only allow https://github.com/<owner>/<repo> or https://gitlab.com/<owner>/<repo>.
+// This is an SSRF allowlist, not a format check - it's implemented with the
+// WHATWG URL parser (not a hand-rolled regex over the raw string) so that:
+//  - a raw IP, "localhost", or an internal/other hostname can never match,
+//    since we compare the parsed, canonical `hostname` against exactly two
+//    literal strings;
+//  - IP-obfuscation tricks (decimal/octal/hex forms like `2130706433` for
+//    127.0.0.1) don't help an attacker, because the URL parser itself
+//    normalizes those into dotted-decimal form as part of parsing, *before*
+//    our allowlist check ever runs - the normalized value still isn't
+//    "github.com"/"gitlab.com";
+//  - userinfo (`user@host`), a non-default port, and a query/fragment are
+//    all rejected outright, since a legitimate clone URL never needs them
+//    and they're common tricks for confusing simpler validators/parsers.
+// This also blocks git's non-http transports (file://, ext::, ssh) outright,
+// since we require `protocol === 'https:'`.
+const ALLOWED_HOSTS = new Set(['github.com', 'gitlab.com']);
+const REPO_PATH = /^\/[\w.-]+\/[\w.-]+?(?:\.git)?\/?$/;
 
 /**
- * @param {unknown} url
- * @returns {boolean} Whether `url` is a plain `https://github.com/<owner>/<repo>` URL.
+ * @param {unknown} value
+ * @returns {boolean} Whether `value` is a plain
+ *   `https://github.com/<owner>/<repo>` or `https://gitlab.com/<owner>/<repo>` URL.
  */
-export function isValidGithubUrl(url) {
-  return typeof url === 'string' && GITHUB_HTTPS_URL.test(url.trim());
+export function isValidRepoUrl(value) {
+  if (typeof value !== 'string') return false;
+
+  let url;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return false;
+  }
+
+  return (
+    url.protocol === 'https:' &&
+    ALLOWED_HOSTS.has(url.hostname.toLowerCase()) &&
+    !url.username &&
+    !url.password &&
+    !url.port &&
+    !url.search &&
+    !url.hash &&
+    REPO_PATH.test(url.pathname)
+  );
 }
 
 /**
  * Shallow-clones a GitHub repo into `destDir`.
  *
- * @param {string} repoUrl A URL that has already passed {@link isValidGithubUrl}.
+ * @param {string} repoUrl A URL that has already passed {@link isValidRepoUrl}.
  * @param {string} destDir Empty directory to clone into.
  * @param {import('./runTool.js').RunOptions} [opts]
  * @returns {Promise<void>}

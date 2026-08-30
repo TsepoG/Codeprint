@@ -1,8 +1,9 @@
 # Sandboxed runner for POST /api/scan. This image never runs as part of
 # the backend API server itself - the backend (see src/services/scan/
-# dockerRunner.js) launches one short-lived, --rm'd container from this
-# image per scan request, passing only a repo URL in and reading only a
-# JSON line back out on stdout. See README security notes.
+# dockerRunner.js) launches two short-lived, --rm'd containers from this
+# image per scan request (a network-enabled clone phase, then a
+# --network none analyze phase sharing a volume with it), each reading
+# back exactly one JSON line on stdout. See README security notes.
 FROM node:24-alpine
 
 # git: shallow-clones the target repo. Nothing else - we deliberately
@@ -37,6 +38,8 @@ USER scanner
 # `npm audit` fails with EROFS instead of running.
 ENV HOME=/tmp
 
-# repoUrl is supplied as the container's CMD, e.g.:
-#   docker run --rm <image> https://github.com/<owner>/<repo>
-ENTRYPOINT ["node", "src/services/scan/container/entrypoint.js"]
+# The phase script (and its args, if any) are supplied as the container's
+# CMD, e.g.:
+#   docker run --rm <image> src/services/scan/container/clonePhase.js <repoUrl>
+#   docker run --rm <image> src/services/scan/container/analyzePhase.js
+ENTRYPOINT ["node"]
