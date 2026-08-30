@@ -1,0 +1,42 @@
+# Sandboxed runner for POST /api/scan. This image never runs as part of
+# the backend API server itself - the backend (see src/services/scan/
+# dockerRunner.js) launches one short-lived, --rm'd container from this
+# image per scan request, passing only a repo URL in and reading only a
+# JSON line back out on stdout. See README security notes.
+FROM node:24-alpine
+
+# git: shallow-clones the target repo. Nothing else - we deliberately
+# never run `npm install`/`npm ci` against a *cloned* repo (arbitrary
+# install/postinstall scripts from untrusted code), so no build toolchain
+# is needed beyond what's already in this base image.
+RUN apk add --no-cache git
+
+# Run as an unprivileged, non-root user so a compromised parser or a
+# malicious repo's tooling has no elevated rights even inside the
+# container's own namespace.
+RUN addgroup -S scanner && adduser -S scanner -G scanner
+
+WORKDIR /app
+
+# Install only from this backend's own lockfile - the exact same
+# eslint/eslint-plugin-sonarjs/madge/jscpd versions used everywhere else,
+# not whatever the target repo happens to specify.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev \
+  && chown -R scanner:scanner /app
+
+# Only the scan pipeline itself - this image has no need for the rest of
+# the backend (Express app, routes, dockerRunner.js).
+COPY --chown=scanner:scanner src/services/scan ./src/services/scan
+
+USER scanner
+
+# The root filesystem is mounted read-only at runtime (see dockerRunner.js's
+# `--read-only`) with only /tmp writable (a tmpfs). npm writes cache/log
+# files under $HOME by default, so point HOME there too - otherwise
+# `npm audit` fails with EROFS instead of running.
+ENV HOME=/tmp
+
+# repoUrl is supplied as the container's CMD, e.g.:
+#   docker run --rm <image> https://github.com/<owner>/<repo>
+ENTRYPOINT ["node", "src/services/scan/container/entrypoint.js"]
