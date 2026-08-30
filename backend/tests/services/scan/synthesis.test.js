@@ -1,6 +1,6 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { synthesizeNarrative } from './synthesis.js';
+import { synthesizeNarrative } from '../../../src/services/scan/synthesis.js';
 
 const RESULT = {
   metrics: { bugs: 2, vulnerabilities: 1, codeSmells: 5, duplicationPct: 12.5 },

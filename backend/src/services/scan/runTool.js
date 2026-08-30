@@ -3,6 +3,15 @@ import { resolveBin } from './resolveBin.js';
 
 const MAX_BUFFER = 20 * 1024 * 1024;
 
+// Routed through a plain (mutable) object rather than calling the imported
+// `execFile` directly, so tests can substitute it - ESM named-export
+// bindings (including core modules') are non-configurable and can't be
+// patched with node:test's `mock.method`, but a regular object's properties
+// can. Every child process this module (and everything built on it -
+// clone.js, dockerRunner.js, the tools/*.js wrappers) ever spawns goes
+// through here.
+export const childProcess = { execFile };
+
 /**
  * @typedef {object} RunOptions
  * @property {string} [cwd] Working directory for the child process.
@@ -29,7 +38,7 @@ const MAX_BUFFER = 20 * 1024 * 1024;
  */
 function execute(command, args, { cwd, timeoutMs, signal, shell = false } = {}) {
   return new Promise((resolve) => {
-    execFile(
+    childProcess.execFile(
       command,
       args,
       { cwd, timeout: timeoutMs, signal, maxBuffer: MAX_BUFFER, windowsHide: true, shell },

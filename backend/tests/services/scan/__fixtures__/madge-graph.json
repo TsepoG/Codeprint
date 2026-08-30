@@ -1,0 +1,5 @@
+{
+  "src/index.js": ["src/legacy.js", "src/clean.js"],
+  "src/legacy.js": [],
+  "src/clean.js": []
+}
