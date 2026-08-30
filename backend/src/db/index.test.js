@@ -54,6 +54,42 @@ test('getScanById returns null for an unknown id', () => {
   assert.equal(getScanById('does-not-exist'), null);
 });
 
+test('a narrative on the result is stored in its own columns and merged back onto result.narrative', () => {
+  const narrative = {
+    summary: 'The codebase is in reasonable shape overall.',
+    gapAnalysis: ['Reduce complexity in b.js', 'Add a lockfile so npm audit can run'],
+  };
+  insertScan({
+    id: 'scan-narrative',
+    repoUrl: 'https://github.com/owner/repo',
+    branch: 'main',
+    commitSha: 'abc123',
+    startedAt: 1000,
+    completedAt: 2000,
+    status: 'complete',
+    result: { ...SCAN_RESULT, narrative },
+  });
+
+  const scan = getScanById('scan-narrative');
+  assert.deepEqual(scan.result.narrative, narrative);
+});
+
+test('a scan with no narrative round-trips with result.narrative left unset', () => {
+  insertScan({
+    id: 'scan-no-narrative',
+    repoUrl: 'https://github.com/owner/repo',
+    branch: 'main',
+    commitSha: 'abc123',
+    startedAt: 1000,
+    completedAt: 2000,
+    status: 'complete',
+    result: SCAN_RESULT,
+  });
+
+  const scan = getScanById('scan-no-narrative');
+  assert.equal(scan.result.narrative, undefined);
+});
+
 test('listScans orders most-recent-first and paginates', () => {
   insertScan({
     id: 'list-old',

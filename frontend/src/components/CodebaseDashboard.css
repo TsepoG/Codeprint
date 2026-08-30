@@ -292,6 +292,68 @@
   background: var(--bp-critical);
 }
 
+/* AI synthesis panel (Overview tab) - styled as a hand-annotated note on
+   the drawing rather than another measured-data tile: dashed border and a
+   small tab label, versus the solid corner-bracket treatment used for
+   stat tiles/trend charts. */
+.blueprint-note {
+  position: relative;
+  margin-bottom: 20px;
+  padding: 20px 20px 16px;
+  border: 1px dashed var(--bp-cyan);
+  border-radius: 2px;
+  background: var(--bp-surface);
+}
+
+.blueprint-note-tag {
+  position: absolute;
+  top: -10px;
+  left: 14px;
+  padding: 1px 8px;
+  font-family: var(--bp-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--bp-bg);
+  background: var(--bp-cyan);
+  border-radius: 2px;
+}
+
+.narrative-summary {
+  margin: 0 0 10px;
+  line-height: 1.55;
+  color: var(--bp-ink);
+}
+
+.narrative-summary:last-of-type {
+  margin-bottom: 0;
+}
+
+.narrative-heading {
+  margin: 16px 0 8px;
+  font-family: var(--bp-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bp-ink-dim);
+}
+
+.narrative-gap-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--bp-ink);
+}
+
+.narrative-gap-list li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.narrative-gap-list li:last-child {
+  margin-bottom: 0;
+}
+
 .dashboard-section {
   margin-bottom: 32px;
 }

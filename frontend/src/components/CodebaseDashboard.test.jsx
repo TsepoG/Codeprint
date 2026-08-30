@@ -9,6 +9,10 @@ const SCAN_RESULT = {
   warnings: ['no package-lock.json found; skipping npm audit'],
   branch: 'main',
   commitSha: 'abc1234567',
+  narrative: {
+    summary: 'The codebase is in reasonable shape overall.',
+    gapAnalysis: ['Reduce complexity in src/index.js'],
+  },
 }
 
 function scanRepo(url) {
@@ -88,8 +92,10 @@ describe('CodebaseDashboard', () => {
       // the text to change - wait for the specific "running" text instead.
       expect(await screen.findByText(/cloning and analyzing/i, {}, { timeout: 8000 })).toBeInTheDocument()
 
-      // Lands on the Overview tab by default: metrics + warnings, no files table yet.
+      // Lands on the Overview tab by default: metrics + AI summary + warnings, no files table yet.
       expect(await screen.findByText('12.5%', {}, { timeout: 8000 })).toBeInTheDocument()
+      expect(screen.getByText(/reasonable shape overall/i)).toBeInTheDocument()
+      expect(screen.getByText(/reduce complexity in src\/index\.js/i)).toBeInTheDocument()
       expect(screen.getByText(/no package-lock\.json found/i)).toBeInTheDocument()
       expect(screen.queryByText('src/index.js')).not.toBeInTheDocument()
 
@@ -107,6 +113,28 @@ describe('CodebaseDashboard', () => {
         }),
       )
       expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/scan/job-1'))
+    },
+    15000,
+  )
+
+  it(
+    'omits the AI summary panel when the scan has no narrative (skipped key or API failure)',
+    async () => {
+      mockFetchSequence({
+        post: { ok: true, json: async () => ({ jobId: 'job-no-narrative', status: 'queued' }) },
+        gets: [
+          {
+            ok: true,
+            json: async () => ({ status: 'complete', result: { ...SCAN_RESULT, narrative: undefined } }),
+          },
+        ],
+      })
+
+      render(<CodebaseDashboard />)
+      scanRepo('https://github.com/owner/repo')
+
+      expect(await screen.findByText('12.5%', {}, { timeout: 8000 })).toBeInTheDocument()
+      expect(screen.queryByText('AI Synthesis')).not.toBeInTheDocument()
     },
     15000,
   )

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { runScan, isValidRepoUrl } from '../services/scan/dockerRunner.js';
+import { synthesizeNarrative } from '../services/scan/synthesis.js';
 import { ScanTimeoutError, CloneError, RepoTooLargeError } from '../services/scan/errors.js';
 import { createJob, getJob, markJobRunning, completeJob, failJob } from '../services/scan/jobStore.js';
 import { insertScan } from '../db/index.js';
@@ -30,11 +31,14 @@ const scanLimiter = rateLimit({
  * `SCAN_RATE_LIMIT_WINDOW_MS`). Validates the URL, creates a job, and
  * returns immediately - the actual scan (clone + eslint/madge/jscpd/npm
  * audit across two short-lived Docker containers; see
- * `services/scan/dockerRunner.js`) runs in the background. Poll
- * `GET /api/scan/:jobId` for the result. Once the job reaches a terminal
- * state (complete or failed), it's also persisted to the `scans` table
- * (see `db/index.js`) - browse past scans via `GET /api/scans` and
- * `GET /api/scans/:id` (`routes/scans.js`).
+ * `services/scan/dockerRunner.js`) runs in the background. Once the tools'
+ * output is normalized, it's sent to the Claude API (`services/scan/synthesis.js`)
+ * to generate a `result.narrative` (`{summary, gapAnalysis}`) - best-effort,
+ * so a missing `ANTHROPIC_API_KEY` or an API failure never fails the scan,
+ * it just omits `narrative`. Poll `GET /api/scan/:jobId` for the result.
+ * Once the job reaches a terminal state (complete or failed), it's also
+ * persisted to the `scans` table (see `db/index.js`) - browse past scans
+ * via `GET /api/scans` and `GET /api/scans/:id` (`routes/scans.js`).
  *
  * Responses: 202 with `{ jobId, status: 'queued' }` on acceptance, 400
  * for an invalid `repoUrl`, 429 if rate-limited.
@@ -54,7 +58,13 @@ router.post('/scan', scanLimiter, (req, res) => {
 
   markJobRunning(job.id);
   runScan(repoUrl)
-    .then((result) => {
+    .then(async (result) => {
+      // Best-effort - synthesizeNarrative never throws, so a missing API
+      // key or a Claude API failure never fails an otherwise-successful
+      // scan; it just means `result.narrative` stays undefined.
+      const narrative = await synthesizeNarrative(result);
+      if (narrative) result.narrative = narrative;
+
       completeJob(job.id, result);
       insertScan({
         id: job.id,
