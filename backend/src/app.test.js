@@ -15,9 +15,16 @@ test('POST /api/scan rejects a missing repoUrl', async () => {
   assert.match(res.body.error, /repoUrl/);
 });
 
-test('POST /api/scan rejects a non-GitHub repoUrl', async () => {
+test('POST /api/scan rejects a disallowed URL scheme', async () => {
   const res = await request(app)
     .post('/api/scan')
     .send({ repoUrl: 'file:///etc/passwd' });
+  assert.equal(res.status, 400);
+});
+
+test('POST /api/scan rejects an SSRF-style internal host', async () => {
+  const res = await request(app)
+    .post('/api/scan')
+    .send({ repoUrl: 'https://169.254.169.254/owner/repo' });
   assert.equal(res.status, 400);
 });
