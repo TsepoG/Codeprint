@@ -40,6 +40,8 @@ This is a monorepo with two packages:
 
 Every scan that reaches a terminal state (complete or failed) is written to a SQLite database (`better-sqlite3`, no separate DB server) at `DB_PATH` (default `backend/data/codeprint.db`, created automatically) - this is what survives a backend restart and what the frontend's History tab reads from. The live job store (`GET /api/scan/:jobId`) is separate and still in-memory/ephemeral, since it only needs to answer "is this specific run done yet" for as long as a client might be polling it.
 
+A completed scan's normalized output is also sent to the Claude API to generate a short narrative - a plain-English health summary plus a bulleted gap analysis - attached as `result.narrative`. This step requires an `ANTHROPIC_API_KEY` (see `backend/.env.example`); without one (or if the API call fails/times out), the scan still completes normally, it just has no `narrative`.
+
 ## Security: `POST /api/scan` runs tools against untrusted, cloned code
 
 The scan endpoint shallow-clones an arbitrary repo and runs eslint,

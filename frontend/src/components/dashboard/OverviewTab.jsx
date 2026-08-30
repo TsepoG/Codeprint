@@ -1,4 +1,5 @@
 import { StatTile, DuplicationMeter } from './shared.jsx'
+import SummaryPanel from './SummaryPanel.jsx'
 
 function formatCount(value) {
   const n = Number(value) || 0
@@ -14,6 +15,8 @@ function OverviewTab({ result }) {
         <StatTile label="Code smells" value={formatCount(result.metrics.codeSmells)} />
         <DuplicationMeter pct={result.metrics.duplicationPct} />
       </section>
+
+      <SummaryPanel narrative={result.narrative} />
 
       {result.warnings?.length > 0 && (
         <div className="status-panel warning-panel">
