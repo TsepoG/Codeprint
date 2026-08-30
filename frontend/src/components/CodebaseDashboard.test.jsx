@@ -7,6 +7,8 @@ const SCAN_RESULT = {
   files: [{ name: 'src/index.js', complexity: 8, coverage: null, severity: 'high' }],
   dependencyGraph: { nodes: [{ id: 'src/index.js' }], edges: [] },
   warnings: ['no package-lock.json found; skipping npm audit'],
+  branch: 'main',
+  commitSha: 'abc1234567',
 }
 
 function scanRepo(url) {
@@ -14,16 +16,23 @@ function scanRepo(url) {
   fireEvent.click(screen.getByRole('button', { name: /scan repository/i }))
 }
 
+function switchTab(name) {
+  fireEvent.click(screen.getByRole('button', { name }))
+}
+
 /**
- * Mocks the POST /api/scan -> GET /api/scan/:jobId polling sequence: the
- * first fetch call (identified by method: 'POST') resolves with `post`,
- * every subsequent call (a GET poll) resolves with the next entry in
- * `gets` in order (repeating the last one past the end).
+ * Mocks fetch across POST /api/scan, GET /api/scan/:jobId, and
+ * GET /api/scans* calls, dispatching on method/URL shape. `gets` is
+ * consumed in order for successive GET /api/scan/:jobId polls (repeating
+ * the last entry past the end); `scansList` and `scanDetail` back the
+ * History tab's list/detail fetches respectively.
  */
-function mockFetchSequence({ post, gets }) {
+function mockFetchSequence({ post, gets = [], scansList, scanDetail }) {
   let pollIndex = 0
-  global.fetch = vi.fn((_url, opts) => {
+  global.fetch = vi.fn((url, opts) => {
     if (opts?.method === 'POST') return Promise.resolve(post)
+    if (typeof url === 'string' && url.includes('/api/scans?')) return Promise.resolve(scansList)
+    if (typeof url === 'string' && /\/api\/scans\/[^/?]+$/.test(url)) return Promise.resolve(scanDetail)
     const response = gets[Math.min(pollIndex, gets.length - 1)]
     pollIndex += 1
     return Promise.resolve(response)
@@ -53,7 +62,7 @@ describe('CodebaseDashboard', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(/waiting for the scan to start/i)
   })
 
-  // These two use real timers rather than fake ones - the poll loop chains
+  // These use real timers rather than fake ones - the poll loop chains
   // several `await`s per cycle, and Vitest's fake-timer microtask flushing
   // doesn't reliably keep pace with that depth (nor does testing-library's
   // own findBy/waitFor polling, which is itself setTimeout-based and would
@@ -61,7 +70,7 @@ describe('CodebaseDashboard', () => {
   // timeout is slower but far more robust here.
 
   it(
-    'polls the job until it completes, then renders metrics, files, and the dependency graph',
+    'polls the job until it completes, then renders the Overview tab, and lets you switch to Hotspots and Dependency Map',
     async () => {
       mockFetchSequence({
         post: { ok: true, json: async () => ({ jobId: 'job-1', status: 'queued' }) },
@@ -78,11 +87,17 @@ describe('CodebaseDashboard', () => {
       // *queued* panel (it exists from the start) without ever waiting for
       // the text to change - wait for the specific "running" text instead.
       expect(await screen.findByText(/cloning and analyzing/i, {}, { timeout: 8000 })).toBeInTheDocument()
-      expect(
-        await screen.findByText('src/index.js', { selector: 'td' }, { timeout: 8000 }),
-      ).toBeInTheDocument()
-      expect(screen.getByText('12.5%')).toBeInTheDocument()
+
+      // Lands on the Overview tab by default: metrics + warnings, no files table yet.
+      expect(await screen.findByText('12.5%', {}, { timeout: 8000 })).toBeInTheDocument()
       expect(screen.getByText(/no package-lock\.json found/i)).toBeInTheDocument()
+      expect(screen.queryByText('src/index.js')).not.toBeInTheDocument()
+
+      switchTab(/hotspots/i)
+      expect(screen.getByText('src/index.js', { selector: 'td' })).toBeInTheDocument()
+
+      switchTab(/dependency map/i)
+      expect(screen.getByText(/1 files, 0 imports/i)).toBeInTheDocument()
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/scan'),
@@ -137,4 +152,60 @@ describe('CodebaseDashboard', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/failed to fetch/i)
   })
+
+  it(
+    'History tab lists past scans and loading one shows the "viewing a past scan" banner',
+    async () => {
+      mockFetchSequence({
+        post: { ok: true, json: async () => ({ jobId: 'job-3', status: 'queued' }) },
+        gets: [{ ok: true, json: async () => ({ status: 'complete', result: SCAN_RESULT }) }],
+        scansList: {
+          ok: true,
+          json: async () => ({
+            scans: [
+              {
+                id: 'old-scan',
+                repoUrl: 'https://github.com/owner/repo',
+                branch: 'main',
+                commitSha: 'deadbee0000',
+                startedAt: 1000,
+                completedAt: 2000,
+                status: 'complete',
+                metrics: { bugs: 9, vulnerabilities: 0, codeSmells: 1, duplicationPct: 3.2 },
+                avgComplexity: 4,
+              },
+            ],
+            total: 1,
+          }),
+        },
+        scanDetail: {
+          ok: true,
+          json: async () => ({
+            id: 'old-scan',
+            repoUrl: 'https://github.com/owner/repo',
+            branch: 'main',
+            commitSha: 'deadbee0000',
+            startedAt: 1000,
+            completedAt: 2000,
+            status: 'complete',
+            result: { ...SCAN_RESULT, metrics: { bugs: 9, vulnerabilities: 0, codeSmells: 1, duplicationPct: 3.2 } },
+          }),
+        },
+      })
+
+      render(<CodebaseDashboard />)
+      scanRepo('https://github.com/owner/repo')
+      await screen.findByText('12.5%', {}, { timeout: 8000 })
+
+      switchTab(/history/i)
+      expect(await screen.findByText('deadbee', { exact: false })).toBeInTheDocument()
+
+      // Exact match: a loose /view/i would also match the "Overview" tab button.
+      fireEvent.click(screen.getByRole('button', { name: 'View' }))
+
+      expect(await screen.findByText(/viewing a past scan/i)).toBeInTheDocument()
+      expect(screen.getByText('9')).toBeInTheDocument() // bugs from the historical result, back on Overview
+    },
+    15000,
+  )
 })

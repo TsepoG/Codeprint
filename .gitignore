@@ -16,6 +16,9 @@ backend/dist/
 coverage/
 .nyc_output/
 
+# SQLite scan history database
+backend/data/
+
 # Logs
 *.log
 npm-debug.log*

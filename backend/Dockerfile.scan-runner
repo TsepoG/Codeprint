@@ -21,9 +21,15 @@ WORKDIR /app
 
 # Install only from this backend's own lockfile - the exact same
 # eslint/eslint-plugin-sonarjs/madge/jscpd versions used everywhere else,
-# not whatever the target repo happens to specify.
+# not whatever the target repo happens to specify. --ignore-scripts:
+# this image also has better-sqlite3 in its dependency tree (used only by
+# the backend's own DB layer, never imported here - see the COPY below),
+# and its install script compiles a native addon that needs Python/a C++
+# toolchain we don't otherwise need in this image; skipping install
+# scripts avoids that entirely (better-sqlite3 ends up inert and unused,
+# which is fine - nothing under src/services/scan imports it).
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev \
+RUN npm ci --omit=dev --ignore-scripts \
   && chown -R scanner:scanner /app
 
 # Only the scan pipeline itself - this image has no need for the rest of

@@ -75,3 +75,30 @@ export async function cloneRepo(repoUrl, destDir, { timeoutMs, signal } = {}) {
     throw new CloneError(`git clone failed: ${stderr?.trim() || error.message}`);
   }
 }
+
+/**
+ * Reads back the branch and commit SHA that {@link cloneRepo} checked out
+ * (the repo's default branch, since we never request a specific one).
+ * Best-effort: returns `null` for either value rather than throwing, since
+ * this is metadata for scan history, not required for the scan itself.
+ *
+ * @param {string} repoDir The directory {@link cloneRepo} cloned into.
+ * @returns {Promise<{branch: string|null, commitSha: string|null}>}
+ */
+export async function getClonedRevision(repoDir) {
+  const [branch, commitSha] = await Promise.all([
+    gitRevParse(repoDir, '--abbrev-ref', 'HEAD'),
+    gitRevParse(repoDir, 'HEAD'),
+  ]);
+  return { branch, commitSha };
+}
+
+/**
+ * @param {string} repoDir
+ * @param {...string} args
+ * @returns {Promise<string|null>}
+ */
+async function gitRevParse(repoDir, ...args) {
+  const { error, stdout } = await runCommand('git', ['rev-parse', ...args], { cwd: repoDir });
+  return error ? null : stdout.trim();
+}

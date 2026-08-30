@@ -1,4 +1,4 @@
-import { cloneRepo } from './clone.js';
+import { cloneRepo, getClonedRevision } from './clone.js';
 import { getDirectorySize } from './diskUsage.js';
 import { runEslint } from './tools/eslint.js';
 import { runMadge } from './tools/madge.js';
@@ -35,6 +35,8 @@ const MAX_REPO_SIZE_BYTES = (Number(process.env.SCAN_MAX_REPO_SIZE_MB) || 500) *
 /**
  * @typedef {object} ClonePhaseResult
  * @property {import('./tools/npmAudit.js').NpmAuditOk|{ok: false, reason: string}} auditResult
+ * @property {string|null} branch The checked-out (default) branch, for scan history - see `dockerRunner.js`.
+ * @property {string|null} commitSha The checked-out commit SHA, for scan history.
  */
 
 /**
@@ -60,8 +62,11 @@ export async function clonePhase(repoUrl, workspaceDir) {
     throw new RepoTooLargeError(`Repository is ~${sizeMb}MB, which exceeds the ${maxMb}MB scan limit`);
   }
 
-  const auditResult = await runNpmAudit(workspaceDir, { timeoutMs: TOOL_TIMEOUT_MS });
-  return { auditResult };
+  const [auditResult, { branch, commitSha }] = await Promise.all([
+    runNpmAudit(workspaceDir, { timeoutMs: TOOL_TIMEOUT_MS }),
+    getClonedRevision(workspaceDir),
+  ]);
+  return { auditResult, branch, commitSha };
 }
 
 /**
