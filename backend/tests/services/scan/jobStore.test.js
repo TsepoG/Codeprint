@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createJob, getJob, markJobRunning, completeJob, failJob } from './jobStore.js';
+import { createJob, getJob, markJobRunning, completeJob, failJob } from '../../../src/services/scan/jobStore.js';
 
 test('createJob starts a job in the queued state with no result/error', () => {
   const job = createJob();

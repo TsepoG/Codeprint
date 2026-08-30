@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import CodebaseDashboard from './CodebaseDashboard'
+import CodebaseDashboard from '../../src/components/CodebaseDashboard'
 
 const SCAN_RESULT = {
   metrics: { bugs: 2, vulnerabilities: 1, codeSmells: 5, duplicationPct: 12.5 },
@@ -180,6 +180,65 @@ describe('CodebaseDashboard', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/failed to fetch/i)
   })
+
+  it(
+    'shows an error message when a poll request fails partway through (not just the initial POST)',
+    async () => {
+      mockFetchSequence({
+        post: { ok: true, json: async () => ({ jobId: 'job-poll-fail', status: 'queued' }) },
+        gets: [{ ok: false, status: 500, json: async () => ({}) }],
+      })
+
+      render(<CodebaseDashboard />)
+      scanRepo('https://github.com/owner/repo')
+
+      expect(await screen.findByRole('alert', {}, { timeout: 8000 })).toHaveTextContent(
+        /checking scan status failed with status 500/i,
+      )
+    },
+    15000,
+  )
+
+  it(
+    'shows an error message when loading a past scan (History > View) fails',
+    async () => {
+      mockFetchSequence({
+        post: { ok: true, json: async () => ({ jobId: 'job-4', status: 'queued' }) },
+        gets: [{ ok: true, json: async () => ({ status: 'complete', result: SCAN_RESULT }) }],
+        scansList: {
+          ok: true,
+          json: async () => ({
+            scans: [
+              {
+                id: 'old-scan',
+                repoUrl: 'https://github.com/owner/repo',
+                branch: 'main',
+                commitSha: 'deadbee0000',
+                startedAt: 1000,
+                completedAt: 2000,
+                status: 'complete',
+                metrics: { bugs: 9, vulnerabilities: 0, codeSmells: 1, duplicationPct: 3.2 },
+                avgComplexity: 4,
+              },
+            ],
+            total: 1,
+          }),
+        },
+        scanDetail: { ok: false, status: 404, json: async () => ({ error: 'No scan found with that ID' }) },
+      })
+
+      render(<CodebaseDashboard />)
+      scanRepo('https://github.com/owner/repo')
+      await screen.findByText('12.5%', {}, { timeout: 8000 })
+
+      switchTab(/history/i)
+      await screen.findByText('deadbee', { exact: false })
+      fireEvent.click(screen.getByRole('button', { name: 'View' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/no scan found with that id/i)
+    },
+    15000,
+  )
 
   it(
     'History tab lists past scans and loading one shows the "viewing a past scan" banner',

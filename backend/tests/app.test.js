@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import app from './app.js';
-import { createJob, markJobRunning, completeJob, failJob } from './services/scan/jobStore.js';
-import { insertScan } from './db/index.js';
+import app from '../src/app.js';
+import { createJob, markJobRunning, completeJob, failJob } from '../src/services/scan/jobStore.js';
+import { insertScan } from '../src/db/index.js';
 
 test('GET /health returns ok status', async () => {
   const res = await request(app).get('/health');

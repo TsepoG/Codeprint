@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { insertScan, listScans, getScanById } from './index.js';
+import { insertScan, listScans, getScanById } from '../../src/db/index.js';
 
 const SCAN_RESULT = {
   metrics: { bugs: 2, vulnerabilities: 0, codeSmells: 3, duplicationPct: 5 },
