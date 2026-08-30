@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { runScan, isValidGithubUrl } from '../services/scan/index.js';
+import { runScan, isValidGithubUrl } from '../services/scan/dockerRunner.js';
 import { ScanTimeoutError, CloneError } from '../services/scan/errors.js';
 
 const router = Router();
@@ -9,10 +9,11 @@ const router = Router();
  *
  * Body: `{ repoUrl: string }` - must be `https://github.com/<owner>/<repo>`.
  *
- * Clones the repo and runs eslint, madge, jscpd, and npm audit against it,
- * returning a unified `{ metrics, files, dependencyGraph, warnings }`
- * response. See `services/scan/index.js` for the scan pipeline and
- * `services/scan/normalize.js` for the response shape.
+ * Runs the scan (clone + eslint/madge/jscpd/npm audit) inside a short-lived
+ * Docker container - see `services/scan/dockerRunner.js` for the container
+ * orchestration, `services/scan/index.js` for the pipeline that actually
+ * runs inside that container, and `services/scan/normalize.js` for the
+ * `{ metrics, files, dependencyGraph, warnings }` response shape.
  *
  * Responses: 200 on success, 400 for an invalid `repoUrl`, 422 if the
  * clone fails, 504 if the scan times out, 502 for anything else.

@@ -20,12 +20,21 @@ export { isValidGithubUrl };
  * `SCAN_TOTAL_TIMEOUT_MS` across the whole operation regardless of how far
  * it got.
  *
+ * This is the actual scan logic - it clones an arbitrary, untrusted repo
+ * and runs tools against it, so it must only ever run inside the sandboxed
+ * scan-runner container (see `container/entrypoint.js` and
+ * `../../../Dockerfile.scan-runner`), never directly in the backend's own
+ * process. The backend process itself calls `runScan` from
+ * `./dockerRunner.js` instead, which shells out to `docker run` and never
+ * touches a cloned repo's files or dependencies on the host. See README
+ * security notes.
+ *
  * @param {string} repoUrl A URL that has already passed {@link isValidGithubUrl}.
  * @returns {Promise<ReturnType<typeof import('./normalize.js').normalizeScanResults>>}
  * @throws {import('./errors.js').CloneError} If the clone fails.
  * @throws {import('./errors.js').ScanTimeoutError} If the scan exceeds its overall timeout.
  */
-export async function runScan(repoUrl) {
+export async function scanRepoInProcess(repoUrl) {
   const targetDir = await createScanDir();
   const controller = new AbortController();
   const overallTimer = setTimeout(
