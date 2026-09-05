@@ -190,6 +190,94 @@ function normalizeTfsecFindings(tfsecResult, targetDir) {
   }));
 }
 
+// Matches one DOT-quoted identifier, honouring backslash escapes. Node names
+// can't just be split on `->`, because inframap emits names that *contain*
+// it - `"im_out.tcp/443->443"->"aws_instance.app"` is a single edge between
+// two nodes, not three.
+const DOT_QUOTED = /"((?:[^"\\]|\\.)*)"/g;
+
+/** @param {string} token @returns {string} */
+function unescapeDot(token) {
+  return token.replace(/\\(.)/g, '$1');
+}
+
+/**
+ * Parses one Graphviz DOT document into the `{nodes, edges}` shape the
+ * dependency graph already uses.
+ *
+ * Only the two statement forms inframap emits are handled - `"a" -> "b";`
+ * edges and `"a" [ attrs ];` node declarations - and attributes are dropped,
+ * since all that's wanted here is the topology.
+ *
+ * @param {string} dot
+ * @param {(name: string) => string} toId Maps a DOT node name to the id used in the merged graph.
+ * @returns {{nodes: {id: string}[], edges: {from: string, to: string}[]}}
+ */
+function parseDotGraph(dot, toId) {
+  /** @type {Set<string>} */
+  const nodes = new Set();
+  /** @type {{from: string, to: string}[]} */
+  const edges = [];
+
+  for (const line of dot.split('\n')) {
+    const tokens = [...line.matchAll(DOT_QUOTED)];
+    if (tokens.length === 0) continue; // `strict digraph G {`, `}`, blank lines
+
+    if (tokens.length === 1) {
+      nodes.add(toId(unescapeDot(tokens[0][1])));
+      continue;
+    }
+
+    // Two or more quoted names on a line: an edge chain, as long as the text
+    // separating each adjacent pair is an arrow.
+    for (let i = 0; i < tokens.length - 1; i += 1) {
+      const gapStart = tokens[i].index + tokens[i][0].length;
+      const gap = line.slice(gapStart, tokens[i + 1].index);
+      if (!gap.includes('->')) continue;
+
+      const from = toId(unescapeDot(tokens[i][1]));
+      const to = toId(unescapeDot(tokens[i + 1][1]));
+      nodes.add(from);
+      nodes.add(to);
+      edges.push({ from, to });
+    }
+  }
+
+  return { nodes: [...nodes].map((id) => ({ id })), edges };
+}
+
+/**
+ * Merges every directory's inframap graph into one.
+ *
+ * Node names are namespaced by the directory they came from, since separate
+ * root modules routinely reuse resource names (an `envs/prod` and an
+ * `envs/dev` that both declare `aws_s3_bucket.assets` are two different
+ * buckets, and collapsing them would draw edges between unrelated
+ * infrastructure). Terraform at the repo root keeps its bare name, so the
+ * common single-module repo reads exactly as inframap named it.
+ *
+ * @param {import('./tools/inframap.js').InframapOk|{ok: false}|undefined} inframapResult
+ * @returns {{nodes: {id: string}[], edges: {from: string, to: string}[]}}
+ */
+function normalizeInfraGraph(inframapResult) {
+  if (!inframapResult?.ok) return { nodes: [], edges: [] };
+
+  /** @type {Map<string, {id: string}>} */
+  const nodes = new Map();
+  /** @type {Map<string, {from: string, to: string}>} */
+  const edges = new Map();
+
+  for (const { dir, dot } of inframapResult.graphs) {
+    const toId = (name) => (dir === '' ? name : `${dir}/${name}`);
+    const graph = parseDotGraph(dot, toId);
+
+    for (const node of graph.nodes) nodes.set(node.id, node);
+    for (const edge of graph.edges) edges.set(`${edge.from} ${edge.to}`, edge);
+  }
+
+  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+}
+
 /**
  * Builds the `infrastructure` section from the two Terraform scanners, plus
  * a warning for whichever of them failed.
@@ -203,12 +291,16 @@ function normalizeTfsecFindings(tfsecResult, targetDir) {
  * @param {boolean} params.hasTerraform
  * @param {import('./tools/checkov.js').CheckovOk|{ok: false, reason: string}|undefined} params.checkovResult
  * @param {import('./tools/tfsec.js').TfsecOk|{ok: false, reason: string}|undefined} params.tfsecResult
+ * @param {import('./tools/inframap.js').InframapOk|{ok: false, reason: string}|undefined} params.inframapResult
  * @param {string} params.targetDir
- * @returns {{infrastructure: {detected: boolean, findings: object[]}, warnings: string[]}}
+ * @returns {{infrastructure: {detected: boolean, findings: object[], graph: {nodes: object[], edges: object[]}}, warnings: string[]}}
  */
-function normalizeInfrastructure({ hasTerraform, checkovResult, tfsecResult, targetDir }) {
+function normalizeInfrastructure({ hasTerraform, checkovResult, tfsecResult, inframapResult, targetDir }) {
   if (!hasTerraform) {
-    return { infrastructure: { detected: false, findings: [] }, warnings: [] };
+    return {
+      infrastructure: { detected: false, findings: [], graph: { nodes: [], edges: [] } },
+      warnings: [],
+    };
   }
 
   // TODO: checkov and tfsec frequently flag the same underlying problem (an
@@ -222,11 +314,22 @@ function normalizeInfrastructure({ hasTerraform, checkovResult, tfsecResult, tar
     ...normalizeTfsecFindings(tfsecResult, targetDir),
   ];
 
-  const warnings = [checkovResult, tfsecResult]
+  const warnings = [checkovResult, tfsecResult, inframapResult]
     .filter((result) => result && !result.ok)
     .map((result) => result.reason);
 
-  return { infrastructure: { detected: true, findings }, warnings };
+  // A directory inframap couldn't parse is common enough in a multi-module
+  // repo (not every module is a standalone root module) that it gets one
+  // aggregated warning rather than one per directory.
+  const skipped = inframapResult?.ok ? inframapResult.skipped : [];
+  if (skipped?.length > 0) {
+    warnings.push(`inframap could not graph ${skipped.length} Terraform ${skipped.length === 1 ? 'directory' : 'directories'}`);
+  }
+
+  return {
+    infrastructure: { detected: true, findings, graph: normalizeInfraGraph(inframapResult) },
+    warnings,
+  };
 }
 
 /**
@@ -260,12 +363,13 @@ function normalizeDependencyGraph(madgeResult) {
  *   files. When false (or absent), the infra tools never ran.
  * @param {import('./tools/checkov.js').CheckovOk|{ok: false, reason: string}} [params.checkovResult]
  * @param {import('./tools/tfsec.js').TfsecOk|{ok: false, reason: string}} [params.tfsecResult]
+ * @param {import('./tools/inframap.js').InframapOk|{ok: false, reason: string}} [params.inframapResult]
  * @param {string} params.targetDir Absolute path to the cloned repo.
  * @returns {{
  *   metrics: {bugs: number, vulnerabilities: number, codeSmells: number, duplicationPct: number},
  *   files: object[],
  *   dependencyGraph: {nodes: object[], edges: object[]},
- *   infrastructure: {detected: boolean, findings: object[]},
+ *   infrastructure: {detected: boolean, findings: object[], graph: {nodes: object[], edges: object[]}},
  *   warnings: string[],
  * }}
  */
@@ -277,6 +381,7 @@ export function normalizeScanResults({
   hasTerraform = false,
   checkovResult,
   tfsecResult,
+  inframapResult,
   targetDir,
 }) {
   const { files, bugs, codeSmells } = normalizeEslint(eslintResult, targetDir);
@@ -284,6 +389,7 @@ export function normalizeScanResults({
     hasTerraform,
     checkovResult,
     tfsecResult,
+    inframapResult,
     targetDir,
   });
 

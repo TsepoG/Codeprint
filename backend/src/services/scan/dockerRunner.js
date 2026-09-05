@@ -101,7 +101,9 @@ export async function runScan(repoUrl) {
       command: ['node', ANALYZE_SCRIPT],
       env: {
         CODEPRINT_AUDIT_RESULT: JSON.stringify(clonePayload.result.auditResult),
-        CODEPRINT_HAS_TERRAFORM: String(clonePayload.result.hasTerraform === true),
+        // Where the clone phase found Terraform - inframap needs the specific
+        // directories, not just a yes/no (see tools/inframap.js).
+        CODEPRINT_TERRAFORM: JSON.stringify(clonePayload.result.terraform ?? { terraformDirs: [], stateFiles: [] }),
       },
       signal: controller.signal,
     });
