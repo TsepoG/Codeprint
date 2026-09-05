@@ -12,9 +12,19 @@ function meterSeverity(pct) {
   return 'good'
 }
 
-export function StatTile({ label, value }) {
+/**
+ * @param {object} props
+ * @param {string} props.label
+ * @param {string} props.value
+ * @param {'high'|'medium'|'low'} [props.severity] When given, the tile gains a
+ *   severity-coloured left border. Tiles that are a plain count (bugs, code
+ *   smells) leave it off - a colour there would imply a judgement the number
+ *   alone doesn't carry.
+ */
+export function StatTile({ label, value, severity }) {
+  const severityClass = severity ? `stat-tile-${SEVERITY[severity] ? SEVERITY[severity].className : 'good'}` : ''
   return (
-    <div className="stat-tile blueprint-panel">
+    <div className={`stat-tile blueprint-panel ${severityClass}`.trim()}>
       <span className="stat-tile-label">{label}</span>
       <span className="stat-tile-value">{value}</span>
     </div>
