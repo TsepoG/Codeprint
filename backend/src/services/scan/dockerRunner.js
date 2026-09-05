@@ -32,15 +32,17 @@ const ERROR_CLASSES = { CloneError, ScanTimeoutError, RepoTooLargeError };
  *
  *   1. The container starts attached to the network (`docker network
  *      disconnect` hasn't run yet) and `docker exec`'s `clonePhase.js`,
- *      which clones the repo, enforces the size cap, and runs npm audit -
- *      the only tool that needs network access.
+ *      which clones the repo, enforces the size cap, detects whether the
+ *      repo has any Terraform, and runs npm audit - the only tool that
+ *      needs network access.
  *   2. The host runs `docker network disconnect` on the running
  *      container, fully severing its network access, then `docker
- *      exec`'s `analyzePhase.js` - eslint/madge/jscpd are pure static
- *      analysis over files already on disk and never need network, so
- *      denying it entirely means a malicious repo can't exfiltrate
- *      anything or reach other hosts during this phase even if one of
- *      these tools has an RCE-class bug.
+ *      exec`'s `analyzePhase.js` - eslint/madge/jscpd (plus checkov/tfsec
+ *      when phase 1 found `.tf` files) are pure static analysis over files
+ *      already on disk and never need network, so denying it entirely
+ *      means a malicious repo can't exfiltrate anything or reach other
+ *      hosts during this phase even if one of these tools has an
+ *      RCE-class bug.
  *
  * Both phases run in the same container (and so share its filesystem
  * directly - see container/workspace.js) rather than two separate
@@ -97,7 +99,10 @@ export async function runScan(repoUrl) {
     const analyzePayload = await execInContainer({
       containerName,
       command: ['node', ANALYZE_SCRIPT],
-      env: { CODEPRINT_AUDIT_RESULT: JSON.stringify(clonePayload.result.auditResult) },
+      env: {
+        CODEPRINT_AUDIT_RESULT: JSON.stringify(clonePayload.result.auditResult),
+        CODEPRINT_HAS_TERRAFORM: String(clonePayload.result.hasTerraform === true),
+      },
       signal: controller.signal,
     });
     throwIfFailed(analyzePayload);

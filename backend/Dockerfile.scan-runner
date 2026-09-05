@@ -12,6 +12,28 @@ FROM node:24-alpine
 # is needed beyond what's already in this base image.
 RUN apk add --no-cache git
 
+# Terraform scanners, used only when a scan detects .tf files (see
+# src/services/scan/detectTerraform.js). Neither is a Node package, so both
+# are installed here rather than coming from package-lock.json:
+#   - checkov is a Python CLI. --break-system-packages because Alpine's
+#     python3 is PEP-668 "externally managed"; that's a non-issue in a
+#     single-purpose container with no other Python in it.
+#   - tfsec ships a static Go binary. It's pinned by version *and* verified
+#     against the sha256 published in that release before it's ever made
+#     executable - this is a binary we hand untrusted input to, so a
+#     silently-swapped download shouldn't be able to become code execution.
+ARG CHECKOV_VERSION=3.3.16
+ARG TFSEC_VERSION=1.28.14
+ARG TFSEC_SHA256=329ae7f67f2f1813ebe08de498719ea7003c75d3ca24bb0b038369062508008e
+RUN apk add --no-cache python3 py3-pip \
+  && pip3 install --no-cache-dir --break-system-packages "checkov==${CHECKOV_VERSION}" \
+  && wget -qO /tmp/tfsec.tar.gz \
+    "https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec_${TFSEC_VERSION}_linux_amd64.tar.gz" \
+  && echo "${TFSEC_SHA256}  /tmp/tfsec.tar.gz" | sha256sum -c - \
+  && tar -xzf /tmp/tfsec.tar.gz -C /usr/local/bin tfsec \
+  && chmod +x /usr/local/bin/tfsec \
+  && rm /tmp/tfsec.tar.gz
+
 # Run as an unprivileged, non-root user so a compromised parser or a
 # malicious repo's tooling has no elevated rights even inside the
 # container's own namespace.

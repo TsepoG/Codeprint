@@ -39,6 +39,35 @@ function auditOk(fixture = 'npm-audit.json') {
   return { ok: true, audit: loadFixture(fixture) };
 }
 
+function checkovOk() {
+  return { ok: true, report: loadFixture('checkov-report.json') };
+}
+
+/** tfsec echoes back absolute paths under the directory it was pointed at; the fixture stores them repo-relative. */
+function tfsecOk() {
+  const report = loadFixture('tfsec-report.json');
+  return {
+    ok: true,
+    report: {
+      results: report.results.map((result) => ({
+        ...result,
+        location: { ...result.location, filename: path.join(TARGET_DIR, ...result.location.filename.split('/')) },
+      })),
+    },
+  };
+}
+
+/** The JS half of the pipeline, held constant while the infra half varies. */
+function jsTools() {
+  return {
+    eslintResult: eslintOk(),
+    madgeResult: madgeOk(),
+    jscpdResult: jscpdOk(),
+    auditResult: auditOk(),
+    targetDir: TARGET_DIR,
+  };
+}
+
 test('combines all four tools into the unified shape', () => {
   const result = normalizeScanResults({
     eslintResult: eslintOk(),
@@ -250,6 +279,171 @@ test('npm audit: a skipped tool (no lockfile) yields zero vulnerabilities and a 
 
   assert.equal(result.metrics.vulnerabilities, 0);
   assert.deepEqual(result.warnings, ['no package-lock.json found; skipping npm audit']);
+});
+
+test('infrastructure: reports detected false with no findings when no .tf files were found', () => {
+  const result = normalizeScanResults({ ...jsTools(), hasTerraform: false });
+
+  assert.deepEqual(result.infrastructure, { detected: false, findings: [] });
+});
+
+test('infrastructure: a JS-only repo gains no extra warnings from the infra section', () => {
+  const withInfraArg = normalizeScanResults({ ...jsTools(), hasTerraform: false });
+  const withoutInfraArg = normalizeScanResults(jsTools()); // hasTerraform omitted entirely
+
+  assert.deepEqual(withInfraArg.warnings, []);
+  assert.deepEqual(withoutInfraArg.warnings, []);
+  assert.deepEqual(withoutInfraArg.infrastructure, { detected: false, findings: [] });
+});
+
+test('infrastructure: never runs the infra tools implicitly - a result passed with hasTerraform false is ignored', () => {
+  const result = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: false,
+    checkovResult: checkovOk(),
+    tfsecResult: tfsecOk(),
+  });
+
+  assert.deepEqual(result.infrastructure, { detected: false, findings: [] });
+});
+
+test('infrastructure: maps checkov failed checks onto the unified finding shape', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    checkovResult: checkovOk(),
+  });
+
+  assert.equal(infrastructure.detected, true);
+  const checkovFindings = infrastructure.findings.filter((f) => f.source === 'checkov');
+  assert.equal(checkovFindings.length, 3); // failed_checks only - passed_checks are not findings
+  assert.deepEqual(checkovFindings[0], {
+    resource: 'aws_s3_bucket.data',
+    file: 'infra/s3.tf', // checkov reports "/infra/s3.tf" - scan-root-relative despite the leading slash
+    line: 12, // start of file_line_range
+    ruleId: 'CKV_AWS_18',
+    severity: 'high',
+    description: 'Ensure the S3 bucket has access logging enabled',
+    source: 'checkov',
+  });
+});
+
+test('infrastructure: maps tfsec results onto the unified finding shape', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    tfsecResult: tfsecOk(),
+  });
+
+  const tfsecFindings = infrastructure.findings.filter((f) => f.source === 'tfsec');
+  assert.equal(tfsecFindings.length, 3);
+  assert.deepEqual(tfsecFindings[0], {
+    resource: 'aws_s3_bucket.data',
+    file: 'infra/s3.tf', // absolute path under targetDir, relativized
+    line: 12,
+    ruleId: 'aws-s3-enable-bucket-encryption', // long_id preferred over rule_id
+    severity: 'high', // CRITICAL folds onto high
+    description: 'Bucket does not have encryption enabled',
+    source: 'tfsec',
+  });
+});
+
+test('infrastructure: folds both tools\' severity scales onto high/medium/low', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    checkovResult: checkovOk(),
+    tfsecResult: tfsecOk(),
+  });
+
+  const severityOf = (ruleId) => infrastructure.findings.find((f) => f.ruleId === ruleId).severity;
+
+  assert.equal(severityOf('aws-s3-enable-bucket-encryption'), 'high'); // tfsec CRITICAL
+  assert.equal(severityOf('CKV_AWS_18'), 'high'); // checkov HIGH
+  assert.equal(severityOf('CKV_AWS_23'), 'medium'); // checkov MEDIUM
+  assert.equal(severityOf('aws-ec2-no-public-ingress-sgr'), 'medium'); // tfsec MEDIUM
+  assert.equal(severityOf('aws-s3-encryption-customer-key'), 'low'); // tfsec LOW
+  assert.equal(severityOf('CKV_AWS_21'), 'low'); // checkov severity: null
+});
+
+test('infrastructure: keeps overlapping findings from both tools, tagged by source (dedup is a known gap)', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    checkovResult: checkovOk(),
+    tfsecResult: tfsecOk(),
+  });
+
+  assert.equal(infrastructure.findings.length, 6); // 3 checkov + 3 tfsec, nothing merged
+  assert.deepEqual(new Set(infrastructure.findings.map((f) => f.source)), new Set(['checkov', 'tfsec']));
+
+  // Both tools flag the same resource in the same file - deliberately kept
+  // as two separate findings for now.
+  const s3Findings = infrastructure.findings.filter((f) => f.resource === 'aws_s3_bucket.data');
+  assert.ok(s3Findings.some((f) => f.source === 'checkov'));
+  assert.ok(s3Findings.some((f) => f.source === 'tfsec'));
+});
+
+test('infrastructure: a failed infra tool degrades to a warning while the other still reports', () => {
+  const result = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    checkovResult: { ok: false, reason: 'checkov failed to run: spawn checkov ENOENT' },
+    tfsecResult: tfsecOk(),
+  });
+
+  assert.equal(result.infrastructure.detected, true);
+  assert.equal(result.infrastructure.findings.length, 3); // tfsec's, unaffected
+  assert.ok(result.infrastructure.findings.every((f) => f.source === 'tfsec'));
+  assert.deepEqual(result.warnings, ['checkov failed to run: spawn checkov ENOENT']);
+});
+
+test('infrastructure: both tools failing still reports detected true, with no findings and two warnings', () => {
+  const result = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    checkovResult: { ok: false, reason: 'checkov reason' },
+    tfsecResult: { ok: false, reason: 'tfsec reason' },
+  });
+
+  assert.deepEqual(result.infrastructure, { detected: true, findings: [] });
+  assert.deepEqual(result.warnings, ['checkov reason', 'tfsec reason']);
+});
+
+test('infrastructure: handles checkov emitting an array of per-framework reports', () => {
+  const single = checkovOk();
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    checkovResult: { ok: true, report: [single.report] },
+  });
+
+  assert.equal(infrastructure.findings.length, 3);
+});
+
+test('infrastructure: handles tfsec reporting a clean scan as results: null', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    tfsecResult: { ok: true, report: { results: null } },
+  });
+
+  assert.deepEqual(infrastructure, { detected: true, findings: [] });
+});
+
+test('infrastructure: infra warnings come after the JS tools\' warnings', () => {
+  const result = normalizeScanResults({
+    eslintResult: { ok: false, reason: 'eslint reason' },
+    madgeResult: madgeOk(),
+    jscpdResult: jscpdOk(),
+    auditResult: { ok: false, reason: 'audit reason' },
+    targetDir: TARGET_DIR,
+    hasTerraform: true,
+    checkovResult: { ok: false, reason: 'checkov reason' },
+    tfsecResult: tfsecOk(),
+  });
+
+  assert.deepEqual(result.warnings, ['eslint reason', 'audit reason', 'checkov reason']);
 });
 
 test('collects one warning per skipped tool, in eslint/madge/jscpd/audit order', () => {

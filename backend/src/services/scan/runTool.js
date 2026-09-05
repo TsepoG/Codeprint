@@ -12,6 +12,32 @@ const MAX_BUFFER = 20 * 1024 * 1024;
 // through here.
 export const childProcess = { execFile };
 
+const MAX_REASON_LENGTH = 200;
+
+/**
+ * Condenses a failed run's error into one short line fit for a user-facing
+ * `warnings` entry.
+ *
+ * `execFile` folds the child's entire stderr into `error.message`, which for
+ * some tools is mostly noise - tfsec, for one, prints a multi-line
+ * deprecation banner on every single run, so the raw message turns a
+ * "tfsec failed" warning into ten lines about Trivy. Keep the first
+ * meaningful line (which is where "Command failed: ..." and most real error
+ * text lives) and cap its length.
+ *
+ * @param {Error|null|undefined} error
+ * @returns {string}
+ */
+export function summarizeExecError(error) {
+  const firstLine = (error?.message ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line !== '' && !/^[=\-*_]+$/.test(line));
+
+  if (!firstLine) return 'unknown error';
+  return firstLine.length > MAX_REASON_LENGTH ? `${firstLine.slice(0, MAX_REASON_LENGTH)}…` : firstLine;
+}
+
 /**
  * @typedef {object} RunOptions
  * @property {string} [cwd] Working directory for the child process.
