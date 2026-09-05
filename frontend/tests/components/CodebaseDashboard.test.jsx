@@ -13,6 +13,26 @@ const SCAN_RESULT = {
     summary: 'The codebase is in reasonable shape overall.',
     gapAnalysis: ['Reduce complexity in src/index.js'],
   },
+  infrastructure: { detected: false, findings: [], graph: { nodes: [], edges: [] } },
+}
+
+const TERRAFORM_RESULT = {
+  ...SCAN_RESULT,
+  infrastructure: {
+    detected: true,
+    findings: [
+      {
+        resource: 'aws_s3_bucket.assets',
+        file: 'infra/s3.tf',
+        line: 12,
+        ruleId: 'CKV_AWS_18',
+        severity: 'high',
+        description: 'Ensure the S3 bucket has access logging enabled',
+        source: 'checkov',
+      },
+    ],
+    graph: { nodes: [{ id: 'aws_s3_bucket.assets' }], edges: [] },
+  },
 }
 
 function scanRepo(url) {
@@ -180,6 +200,109 @@ describe('CodebaseDashboard', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/failed to fetch/i)
   })
+
+  it(
+    'hides the Infrastructure tab and the infra metric for a repo with no Terraform',
+    async () => {
+      mockFetchSequence({
+        post: { ok: true, json: async () => ({ jobId: 'job-no-tf', status: 'queued' }) },
+        gets: [{ ok: true, json: async () => ({ status: 'complete', result: SCAN_RESULT }) }],
+      })
+
+      render(<CodebaseDashboard />)
+      scanRepo('https://github.com/owner/repo')
+      await screen.findByText('12.5%', {}, { timeout: 8000 })
+
+      expect(screen.queryByRole('button', { name: 'Infrastructure' })).not.toBeInTheDocument()
+      expect(screen.queryByText(/infra findings/i)).not.toBeInTheDocument()
+    },
+    15000,
+  )
+
+  it(
+    'shows the Infrastructure tab and infra metric for a Terraform repo, and renders the tab',
+    async () => {
+      mockFetchSequence({
+        post: { ok: true, json: async () => ({ jobId: 'job-tf', status: 'queued' }) },
+        gets: [{ ok: true, json: async () => ({ status: 'complete', result: TERRAFORM_RESULT }) }],
+      })
+
+      render(<CodebaseDashboard />)
+      scanRepo('https://github.com/owner/repo')
+      await screen.findByText('12.5%', {}, { timeout: 8000 })
+
+      // Overview gains the infra metric card.
+      expect(screen.getByText(/infra findings/i)).toBeInTheDocument()
+
+      switchTab('Infrastructure')
+      expect(screen.getByRole('img', { name: /infrastructure graph/i })).toBeInTheDocument()
+      expect(screen.getByText('CKV_AWS_18')).toBeInTheDocument()
+      expect(screen.getByText('checkov')).toBeInTheDocument()
+    },
+    15000,
+  )
+
+  it(
+    'falls back to Overview when the visible tabs change out from under the current one',
+    async () => {
+      // Scan a Terraform repo, sit on the Infrastructure tab, then load a
+      // past scan of a repo with no Terraform - the tab disappears, and the
+      // pane must not go blank.
+      mockFetchSequence({
+        post: { ok: true, json: async () => ({ jobId: 'job-tf-2', status: 'queued' }) },
+        gets: [{ ok: true, json: async () => ({ status: 'complete', result: TERRAFORM_RESULT }) }],
+        scansList: {
+          ok: true,
+          json: async () => ({
+            scans: [
+              {
+                id: 'js-only-scan',
+                repoUrl: 'https://github.com/owner/repo',
+                branch: 'main',
+                commitSha: 'deadbee0000',
+                startedAt: 1000,
+                completedAt: 2000,
+                status: 'complete',
+                metrics: SCAN_RESULT.metrics,
+                avgComplexity: 4,
+              },
+            ],
+            total: 1,
+          }),
+        },
+        scanDetail: {
+          ok: true,
+          json: async () => ({
+            id: 'js-only-scan',
+            repoUrl: 'https://github.com/owner/repo',
+            branch: 'main',
+            commitSha: 'deadbee0000',
+            startedAt: 1000,
+            completedAt: 2000,
+            status: 'complete',
+            result: SCAN_RESULT, // no Terraform
+          }),
+        },
+      })
+
+      render(<CodebaseDashboard />)
+      scanRepo('https://github.com/owner/repo')
+      await screen.findByText('12.5%', {}, { timeout: 8000 })
+
+      switchTab('Infrastructure')
+      expect(screen.getByRole('img', { name: /infrastructure graph/i })).toBeInTheDocument()
+
+      switchTab(/history/i)
+      await screen.findByText('deadbee', { exact: false })
+      fireEvent.click(screen.getByRole('button', { name: 'View' }))
+
+      await screen.findByText(/viewing a past scan/i)
+      expect(screen.queryByRole('button', { name: 'Infrastructure' })).not.toBeInTheDocument()
+      // Overview is showing rather than an empty pane.
+      expect(screen.getByText('12.5%')).toBeInTheDocument()
+    },
+    15000,
+  )
 
   it(
     'shows an error message when a poll request fails partway through (not just the initial POST)',

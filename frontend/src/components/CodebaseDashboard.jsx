@@ -4,6 +4,7 @@ import OverviewTab from './dashboard/OverviewTab.jsx'
 import DependencyMapTab from './dashboard/DependencyMapTab.jsx'
 import HotspotsTab from './dashboard/HotspotsTab.jsx'
 import HistoryTab from './dashboard/HistoryTab.jsx'
+import InfrastructureTab from './dashboard/InfrastructureTab.jsx'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const POLL_INTERVAL_MS = 2500
@@ -13,10 +14,14 @@ const STATUS_MESSAGES = {
   running: 'Cloning and analyzing the repository - this can take a few minutes…',
 }
 
+// Infrastructure is conditional: it only appears for repos that actually
+// contain Terraform (and is absent from scans recorded before infra
+// scanning existed, which have no `infrastructure` at all).
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'dependency-map', label: 'Dependency Map' },
   { id: 'hotspots', label: 'Hotspots' },
+  { id: 'infrastructure', label: 'Infrastructure', showFor: (result) => result.infrastructure?.detected === true },
   { id: 'history', label: 'History' },
 ]
 
@@ -133,6 +138,12 @@ function CodebaseDashboard() {
 
   const isBusy = status === 'queued' || status === 'running'
 
+  const visibleTabs = result ? TABS.filter((tab) => !tab.showFor || tab.showFor(result)) : TABS
+  // Loading a past scan can take the current tab away with it (a Terraform
+  // repo's Infrastructure tab, then a scan of a JS-only repo), so fall back
+  // rather than leaving the pane blank.
+  const currentTab = visibleTabs.some((tab) => tab.id === activeTab) ? activeTab : 'overview'
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
@@ -191,23 +202,26 @@ function CodebaseDashboard() {
           )}
 
           <nav className="tab-bar" aria-label="Scan result sections">
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
+                className={`tab-button ${currentTab === tab.id ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
-                aria-current={activeTab === tab.id}
+                aria-current={currentTab === tab.id}
               >
                 {tab.label}
               </button>
             ))}
           </nav>
 
-          {activeTab === 'overview' && <OverviewTab result={result} />}
-          {activeTab === 'dependency-map' && <DependencyMapTab dependencyGraph={result.dependencyGraph} />}
-          {activeTab === 'hotspots' && <HotspotsTab files={result.files} />}
-          {activeTab === 'history' && (
+          {currentTab === 'overview' && <OverviewTab result={result} />}
+          {currentTab === 'dependency-map' && <DependencyMapTab dependencyGraph={result.dependencyGraph} />}
+          {currentTab === 'hotspots' && <HotspotsTab files={result.files} />}
+          {currentTab === 'infrastructure' && (
+            <InfrastructureTab infrastructure={result.infrastructure} warnings={result.warnings} />
+          )}
+          {currentTab === 'history' && (
             <HistoryTab apiBaseUrl={API_BASE_URL} repoUrl={repoUrl.trim()} onViewScan={handleViewScan} />
           )}
         </div>

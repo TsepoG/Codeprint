@@ -21,6 +21,11 @@
   --bp-critical: #ff6b6b;
   --bp-mono: var(--mono, ui-monospace, Consolas, monospace);
 
+  /* width:100% matters here - #root is a column flex container, so the auto
+     inline margins below would otherwise shrink this to fit its content
+     rather than fill the available space, letting the widest element decide
+     how wide the whole dashboard is. */
+  width: 100%;
   max-width: 960px;
   min-height: 100svh;
   margin: 0 auto;
@@ -238,9 +243,11 @@
   border-bottom-color: var(--bp-accent);
 }
 
+/* auto-fit rather than a fixed 4: the row carries a fifth tile (infra
+   findings) only for repos that have Terraform. */
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -251,6 +258,20 @@
   gap: 6px;
   padding: 16px;
   border-radius: 2px;
+}
+
+/* Opt-in: only tiles whose number carries a severity judgement get the
+   coloured edge (see StatTile's `severity` prop). */
+.stat-tile-good {
+  border-left: 3px solid var(--bp-good);
+}
+
+.stat-tile-warning {
+  border-left: 3px solid var(--bp-warning);
+}
+
+.stat-tile-critical {
+  border-left: 3px solid var(--bp-critical);
 }
 
 .stat-tile-label {
@@ -474,6 +495,95 @@
 
 .graph-node circle {
   fill: var(--bp-cyan);
+}
+
+/* Infrastructure graph: same schematic language as the dependency map, but
+   rectangles wired with right-angle traces rather than circles on a radial
+   layout - so the infra layer never reads as the app's import graph. */
+.infra-graph {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 4px 0 8px;
+}
+
+.infra-node rect {
+  fill: var(--bp-surface-raised);
+  stroke: var(--bp-line-strong);
+  stroke-width: 1;
+}
+
+.infra-node-label {
+  font-family: var(--bp-mono);
+  font-size: 11px;
+  fill: var(--bp-ink);
+}
+
+.infra-node-module {
+  font-family: var(--bp-mono);
+  font-size: 9px;
+  fill: var(--bp-ink-dim);
+  letter-spacing: 0.04em;
+}
+
+.infra-trace {
+  fill: none;
+  stroke: var(--bp-cyan);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+
+.infra-findings-heading {
+  margin: 24px 0 10px;
+  font-family: var(--bp-mono);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bp-ink);
+}
+
+.infra-findings-count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--bp-ink-dim);
+}
+
+.infra-rule-id {
+  display: block;
+  font-family: var(--bp-mono);
+  font-size: 12px;
+  color: var(--bp-cyan);
+}
+
+.infra-rule-description {
+  display: block;
+  font-size: 12px;
+  color: var(--bp-ink-dim);
+  margin-top: 2px;
+}
+
+.infra-source {
+  font-family: var(--bp-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 2px;
+  border: 1px solid var(--bp-line);
+  color: var(--bp-ink-dim);
+}
+
+.infra-line {
+  color: var(--bp-ink-dim);
+}
+
+.partial-note {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--bp-ink-dim);
 }
 
 /* Trend charts (History tab) */
