@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { StatTile, DuplicationMeter, SeverityBadge, FilesTable, DependencyGraph } from '../../../src/components/dashboard/shared.jsx'
 
 describe('StatTile', () => {
@@ -106,5 +106,65 @@ describe('DependencyGraph', () => {
 
     expect(() => render(<DependencyGraph nodes={nodes} edges={edges} />)).not.toThrow()
     expect(screen.getByRole('img')).toBeInTheDocument()
+  })
+
+  describe('selectable nodes', () => {
+    const nodes = [{ id: 'a.js' }, { id: 'b.js' }]
+    const edges = [{ from: 'a.js', to: 'b.js' }]
+
+    it('leaves nodes as plain marks when nothing handles a selection', () => {
+      render(<DependencyGraph nodes={nodes} edges={edges} />)
+      expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    })
+
+    it('makes each node a named button when one does', () => {
+      render(<DependencyGraph nodes={nodes} edges={edges} onSelectNode={() => {}} />)
+      expect(screen.getByRole('button', { name: 'a.js - view module' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'b.js - view module' })).toBeInTheDocument()
+    })
+
+    it('calls back with the node id on click', () => {
+      const onSelectNode = vi.fn()
+      render(<DependencyGraph nodes={nodes} edges={edges} onSelectNode={onSelectNode} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'b.js - view module' }))
+
+      expect(onSelectNode).toHaveBeenCalledWith('b.js')
+    })
+
+    it.each(['Enter', ' '])('activates on %s, since SVG has no default for it', (key) => {
+      const onSelectNode = vi.fn()
+      render(<DependencyGraph nodes={nodes} edges={edges} onSelectNode={onSelectNode} />)
+
+      fireEvent.keyDown(screen.getByRole('button', { name: 'a.js - view module' }), { key })
+
+      expect(onSelectNode).toHaveBeenCalledWith('a.js')
+    })
+
+    it('ignores other keys', () => {
+      const onSelectNode = vi.fn()
+      render(<DependencyGraph nodes={nodes} edges={edges} onSelectNode={onSelectNode} />)
+
+      fireEvent.keyDown(screen.getByRole('button', { name: 'a.js - view module' }), { key: 'a' })
+
+      expect(onSelectNode).not.toHaveBeenCalled()
+    })
+
+    it('gives each node a hit target larger than the drawn mark', () => {
+      const { container } = render(<DependencyGraph nodes={nodes} edges={edges} onSelectNode={() => {}} />)
+
+      const target = container.querySelector('.graph-node .graph-node-target')
+      expect(Number(target.getAttribute('r'))).toBeGreaterThan(5)
+    })
+
+    it('marks the selected node', () => {
+      const { container } = render(
+        <DependencyGraph nodes={nodes} edges={edges} onSelectNode={() => {}} selectedNode="b.js" />,
+      )
+
+      const selected = container.querySelectorAll('.graph-node.selected')
+      expect(selected).toHaveLength(1)
+      expect(selected[0]).toHaveAttribute('aria-label', 'b.js - view module')
+    })
   })
 })

@@ -267,7 +267,13 @@ function CodebaseDashboard() {
           </nav>
 
           {currentTab === 'overview' && <OverviewTab result={result} onSelectCategory={setOpenCategory} />}
-          {currentTab === 'dependency-map' && <DependencyMapTab dependencyGraph={result.dependencyGraph} />}
+          {currentTab === 'dependency-map' && (
+            <DependencyMapTab
+              dependencyGraph={result.dependencyGraph}
+              files={result.files}
+              findings={result.findings}
+            />
+          )}
           {currentTab === 'hotspots' && <HotspotsTab files={result.files} highlightFile={highlightFile} />}
           {currentTab === 'infrastructure' && (
             <InfrastructureTab
