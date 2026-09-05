@@ -22,11 +22,24 @@ This is a monorepo with two packages:
    ```bash
    cd backend && docker build -f Dockerfile.scan-runner -t codeprint-scan-runner:latest .
    ```
-   This bundles the whole scan toolchain - eslint/madge/jscpd plus checkov,
-   tfsec, and inframap - so the first build takes a few minutes and pulls
-   roughly 700MB. Rebuild it whenever anything under
+   This bundles the whole scan toolchain, so the first build takes a few
+   minutes and pulls roughly 700MB. Rebuild it whenever anything under
    `backend/src/services/scan/` changes: the container runs a copy of that
    code, so a scan will silently keep using the old version until you do.
+
+   | Tool | Installed as | Used for |
+   | --- | --- | --- |
+   | eslint, madge, jscpd | npm packages | JS/React quality, dependency graph, duplication |
+   | `npm audit` | bundled with node | dependency vulnerabilities |
+   | checkov `3.3.16` | pip (Python CLI) | Terraform misconfigurations |
+   | tfsec `1.28.14` | pinned release tarball, sha256-verified | Terraform misconfigurations |
+   | inframap `0.8.0` | pinned release tarball, sha256-verified | Terraform resource graph |
+
+   The three Terraform tools are **only invoked when the cloned repo
+   actually contains `.tf` files** (see [Terraform scanning](#terraform-scanning)),
+   so a JS-only repo never pays for them. All of these live in the image
+   and are never installed on the host - nothing here needs to be on your
+   own `PATH`.
 4. Run the backend:
    ```bash
    cd backend && npm run dev
@@ -86,11 +99,35 @@ Terraform and JS scanning are fully independent: a repo can have both, either, o
 
 **Known gap:** findings are *not* deduplicated across the two tools. checkov and tfsec frequently flag the same underlying issue under different rule ids, so a repo scanned by both will show it twice - once per `source`. Merging them needs a mapping between the two rule sets, which isn't built yet (there's a matching `TODO` in `normalize.js`).
 
+## Testing
+
+```bash
+cd backend && npm test     # node:test + c8
+cd frontend && npm test    # vitest + testing-library
+```
+
+Both packages keep their tests in a `tests/` directory mirroring `src/`,
+and both write lcov into `coverage/`, which
+`.github/workflows/ci.yml` uploads as a build artifact.
+
+**Nothing in either suite touches the network, Docker, or a real tool
+binary.** Every child process the backend spawns goes through one seam -
+the mutable `childProcess` object in `src/services/scan/runTool.js` - which
+tests substitute, so `git clone`, eslint, checkov, tfsec and inframap are
+all answered with canned output. (The seam exists because ES module
+bindings are non-configurable and can't be patched with `node:test`'s
+`mock.method`.) The Terraform tools' raw output lives in
+`tests/services/scan/__fixtures__/` and is normalized in
+`normalize.test.js`; `tests/services/scan/index.test.js` covers the
+orchestration on top - notably that a repo with no `.tf` files never
+spawns checkov/tfsec/inframap at all and reports
+`infrastructure.detected: false`.
+
 ## Security: `POST /api/scan` runs tools against untrusted, cloned code
 
 The scan endpoint shallow-clones an arbitrary repo and runs eslint,
-madge, jscpd, and `npm audit` against it - plus checkov and tfsec when
-the repo contains Terraform. Treat the contents of that clone as
+madge, jscpd, and `npm audit` against it - plus checkov, tfsec, and
+inframap when the repo contains Terraform. Treat the contents of that clone as
 **hostile input**, not as trusted code. This section covers
 each layer of protection, roughly in the order a request passes through
 them.
@@ -162,8 +199,8 @@ into it twice, reading one JSON line back from each `exec`'s stdout:
   *running* container - fully severing its network interfaces, verified
   (not just configured) to actually cut off connectivity, not merely
   block new connections - before `docker exec`ing
-  `container/analyzePhase.js`. eslint/madge/jscpd - and checkov/tfsec,
-  when the repo has Terraform - are pure static analysis over files
+  `container/analyzePhase.js`. eslint/madge/jscpd - and
+  checkov/tfsec/inframap, when the repo has Terraform - are pure static analysis over files
   already on disk and never need network, so denying it entirely means a
   malicious repo can't exfiltrate anything or reach other hosts during
   this phase even if one of these tools has an RCE-class bug. Both phases
@@ -220,12 +257,13 @@ rather than landing directly on the host:
 
 ### 4. Tests
 
-`src/services/scan/clone.test.js` unit-tests `isValidRepoUrl` directly
-against the SSRF/confusion cases above (fast, and doesn't risk tripping
-the rate limiter the way dozens of HTTP round-trips would); `app.test.js`
-has a couple of thin end-to-end checks confirming the route actually
-wires validation failures to a `400`. None of this needs Docker - it all
-short-circuits before a container would ever be started.
+`backend/tests/services/scan/clone.test.js` unit-tests `isValidRepoUrl`
+directly against the SSRF/confusion cases above (fast, and doesn't risk
+tripping the rate limiter the way dozens of HTTP round-trips would);
+`backend/tests/app.test.js` has a couple of thin end-to-end checks
+confirming the route actually wires validation failures to a `400`. None
+of this needs Docker - it all short-circuits before a container would
+ever be started. See [Testing](#testing) for the suite as a whole.
 
 ### Known residual gaps
 
