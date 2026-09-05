@@ -25,6 +25,20 @@ const ANALYZE_OK = {
   result: {
     metrics: { bugs: 1, vulnerabilities: 0, codeSmells: 0, duplicationPct: 0 },
     files: [{ name: 'src/index.js', complexity: 3, coverage: null, severity: 'low' }],
+    findings: [
+      {
+        id: 'a1b2c3d4e5f60718',
+        category: 'bug',
+        source: 'eslint',
+        file: 'src/index.js',
+        line: 12,
+        endLine: 12,
+        severity: 'high',
+        ruleId: 'no-undef',
+        description: "'foo' is not defined.",
+        snippet: { startLine: 9, text: 'const a = 1;\nconst b = 2;\n\nfoo();\n' },
+      },
+    ],
     dependencyGraph: { nodes: [], edges: [] },
     warnings: ['no package-lock.json found; skipping npm audit'],
   },

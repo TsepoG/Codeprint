@@ -589,6 +589,46 @@ test('infrastructure graph: a JS-only repo reports an empty graph without runnin
   assert.deepEqual(infrastructure, { detected: false, findings: [], graph: { nodes: [], edges: [] } });
 });
 
+test('findings: the unified result carries one flattened findings array alongside the existing metrics', () => {
+  const result = normalizeScanResults({
+    eslintResult: eslintOk(),
+    madgeResult: madgeOk(),
+    jscpdResult: jscpdOk(),
+    auditResult: auditOk(),
+    targetDir: TARGET_DIR,
+  });
+
+  // The counts already asserted against `result.metrics` above (bugs: 1,
+  // codeSmells: 3) should be derivable from findings, so the two views of
+  // the same scan never disagree.
+  assert.equal(result.findings.filter((f) => f.category === 'bug').length, result.metrics.bugs);
+  assert.equal(result.findings.filter((f) => f.category === 'codeSmell').length, result.metrics.codeSmells);
+});
+
+test('findings: infrastructure findings are included in the flat array too, tagged category "infra"', () => {
+  const result = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    checkovResult: checkovOk(),
+  });
+
+  const infra = result.findings.filter((f) => f.category === 'infra');
+  assert.equal(infra.length, result.infrastructure.findings.length);
+  assert.ok(infra.every((f) => f.source === 'checkov'));
+});
+
+test('findings: a scan with every tool skipped has an empty findings array, not an error', () => {
+  const result = normalizeScanResults({
+    eslintResult: { ok: false, reason: 'x' },
+    madgeResult: { ok: false, reason: 'x' },
+    jscpdResult: { ok: false, reason: 'x' },
+    auditResult: { ok: false, reason: 'x' },
+    targetDir: TARGET_DIR,
+  });
+
+  assert.deepEqual(result.findings, []);
+});
+
 test('collects one warning per skipped tool, in eslint/madge/jscpd/audit order', () => {
   const result = normalizeScanResults({
     eslintResult: { ok: false, reason: 'eslint reason' },

@@ -31,7 +31,9 @@ router.get('/scans', (req, res) => {
  * GET /api/scans/:id
  *
  * Returns one persisted scan's full record, including its complete result
- * (`{ metrics, files, dependencyGraph, warnings }`) if it completed.
+ * (`{ metrics, files, findings, dependencyGraph, infrastructure, warnings }`)
+ * if it completed. `findings` is the flat array of individual problems
+ * behind the summary `metrics` counts - see `services/scan/findings.js`.
  *
  * Responses: 200 with the `ScanRecord`, or 404 if no scan has that id.
  */

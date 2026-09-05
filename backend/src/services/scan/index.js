@@ -9,6 +9,7 @@ import { runCheckov } from './tools/checkov.js';
 import { runTfsec } from './tools/tfsec.js';
 import { runInframap } from './tools/inframap.js';
 import { normalizeScanResults } from './normalize.js';
+import { attachSnippets } from './findings.js';
 import { RepoTooLargeError } from './errors.js';
 
 const CLONE_TIMEOUT_MS = Number(process.env.SCAN_CLONE_TIMEOUT_MS) || 30_000;
@@ -81,7 +82,9 @@ export async function clonePhase(repoUrl, workspaceDir) {
  * Runs eslint/madge/jscpd against the already-cloned `workspaceDir` - plus
  * checkov/tfsec/inframap if `clonePhase` found Terraform - and produces the
  * final unified response, folding in `auditResult` from `clonePhase` (which
- * ran while the container still had network). Intended to run inside a
+ * ran while the container still had network). This is also the last point at
+ * which the cloned source exists, so it's where each finding's code snippet
+ * is read off disk. Intended to run inside a
  * network-severed container: like the JS tools, all three Terraform tools
  * are pure static analysis over files already on disk. Nothing here ever
  * runs `terraform init`, so a repo's module `source` addresses are only
@@ -116,7 +119,7 @@ export async function analyzePhase(workspaceDir, auditResult, terraform = { terr
     hasTerraform ? runInframap(workspaceDir, terraform, toolOpts).catch((err) => asSkipped('inframap', err)) : undefined,
   ]);
 
-  return normalizeScanResults({
+  const result = normalizeScanResults({
     eslintResult,
     madgeResult,
     jscpdResult,
@@ -127,6 +130,14 @@ export async function analyzePhase(workspaceDir, auditResult, terraform = { terr
     inframapResult,
     targetDir: workspaceDir,
   });
+
+  // Has to happen here, before this function returns: the container (and
+  // with it the clone) is torn down as soon as the analyze phase's JSON
+  // reaches the host, and a finding that leaves without its snippet can
+  // never be given one afterwards. Best-effort per file - see findings.js.
+  await attachSnippets(result.findings, workspaceDir);
+
+  return result;
 }
 
 /**

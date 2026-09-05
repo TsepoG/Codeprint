@@ -1,20 +1,11 @@
 import path from 'node:path';
+import { toPosixRelative } from './repoPath.js';
+// `isSonarRule` lives with the finding extraction because that's what
+// decides bug-vs-code-smell per message; the aggregate counters here have to
+// classify identically or the metrics and the findings array would disagree.
+import { extractFindings, isSonarRule } from './findings.js';
 
 const COGNITIVE_COMPLEXITY_RE = /Cognitive Complexity from (\d+)/i;
-
-/**
- * @param {string} targetDir
- * @param {string} absolutePath
- * @returns {string} `absolutePath` relative to `targetDir`, with `/` separators.
- */
-function toPosixRelative(targetDir, absolutePath) {
-  return path.relative(targetDir, absolutePath).split(path.sep).join('/');
-}
-
-/** @param {string} ruleId @returns {boolean} */
-function isSonarRule(ruleId) {
-  return typeof ruleId === 'string' && ruleId.startsWith('sonarjs/');
-}
 
 /**
  * Estimates a file's cognitive complexity from its sonarjs violations: the
@@ -368,6 +359,7 @@ function normalizeDependencyGraph(madgeResult) {
  * @returns {{
  *   metrics: {bugs: number, vulnerabilities: number, codeSmells: number, duplicationPct: number},
  *   files: object[],
+ *   findings: import('./findings.js').Finding[],
  *   dependencyGraph: {nodes: object[], edges: object[]},
  *   infrastructure: {detected: boolean, findings: object[], graph: {nodes: object[], edges: object[]}},
  *   warnings: string[],
@@ -393,10 +385,25 @@ export function normalizeScanResults({
     targetDir,
   });
 
+  // The individual problems behind the counters above. Snippets are attached
+  // separately (see `findings.js`), by the analyze phase, while the clone
+  // still exists.
+  const { findings, truncated } = extractFindings({
+    eslintResult,
+    auditResult,
+    jscpdResult,
+    infraFindings: infrastructure.findings,
+    targetDir,
+  });
+
   const warnings = [eslintResult, madgeResult, jscpdResult, auditResult]
     .filter((result) => result && !result.ok)
     .map((result) => result.reason)
     .concat(infraWarnings);
+
+  if (truncated > 0) {
+    warnings.push(`${truncated} lower-severity findings omitted (kept the first ${findings.length})`);
+  }
 
   return {
     metrics: {
@@ -406,6 +413,7 @@ export function normalizeScanResults({
       duplicationPct: normalizeDuplicationPct(jscpdResult),
     },
     files,
+    findings,
     dependencyGraph: normalizeDependencyGraph(madgeResult),
     infrastructure,
     warnings,
