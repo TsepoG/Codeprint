@@ -2,7 +2,13 @@ import { FilesTable } from './shared.jsx'
 
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 }
 
-function HotspotsTab({ files }) {
+/**
+ * @param {object} props
+ * @param {object[]} props.files
+ * @param {string|null} [props.highlightFile] Set when the user got here via
+ *   "view in context" from a finding.
+ */
+function HotspotsTab({ files, highlightFile }) {
   const ranked = [...files].sort((a, b) => {
     const bySeverity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
     return bySeverity !== 0 ? bySeverity : b.complexity - a.complexity
@@ -11,7 +17,11 @@ function HotspotsTab({ files }) {
   return (
     <div className="dashboard-section">
       <p className="section-caption">Files ranked by severity, then cognitive complexity</p>
-      <FilesTable files={ranked} emptyMessage="No hotspots - the linter found nothing to report." />
+      <FilesTable
+        files={ranked}
+        emptyMessage="No hotspots - the linter found nothing to report."
+        highlightFile={highlightFile}
+      />
     </div>
   )
 }

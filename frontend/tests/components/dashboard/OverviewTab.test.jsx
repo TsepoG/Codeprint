@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import OverviewTab from '../../../src/components/dashboard/OverviewTab.jsx'
 
 const BASE = {
@@ -67,5 +67,51 @@ describe('OverviewTab infra metric', () => {
     render(<OverviewTab result={withFindings('high')} />)
     const bugsTile = screen.getByText('Bugs').closest('.stat-tile')
     expect(bugsTile.className).not.toMatch(/stat-tile-(good|warning|critical)/)
+  })
+})
+
+describe('OverviewTab metric tiles as controls', () => {
+  it('leaves the tiles as plain blocks when nothing handles a selection', () => {
+    render(<OverviewTab result={BASE} />)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['Bugs', 'bug'],
+    ['Vulnerabilities', 'vulnerability'],
+    ['Code smells', 'codeSmell'],
+    ['Duplication', 'duplication'],
+  ])('opens the %s tile onto the %s category', (label, category) => {
+    const onSelectCategory = vi.fn()
+    render(<OverviewTab result={BASE} onSelectCategory={onSelectCategory} />)
+
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`${label} - view findings`, 'i') }))
+
+    expect(onSelectCategory).toHaveBeenCalledWith(category)
+  })
+
+  it('opens the infra tile onto the infra category', () => {
+    const onSelectCategory = vi.fn()
+    render(<OverviewTab result={withFindings('high')} onSelectCategory={onSelectCategory} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /infra findings - view findings/i }))
+
+    expect(onSelectCategory).toHaveBeenCalledWith('infra')
+  })
+
+  it('names each tile so the control says what it opens, not just its number', () => {
+    render(<OverviewTab result={BASE} onSelectCategory={vi.fn()} />)
+    // "Bugs 3" alone gives no hint the tile does anything.
+    expect(screen.getByRole('button', { name: 'Bugs - view findings' })).toBeInTheDocument()
+  })
+
+  it('keeps a zero-count tile clickable, since an empty category still has a story', () => {
+    const onSelectCategory = vi.fn()
+    const clean = { ...BASE, metrics: { bugs: 0, vulnerabilities: 0, codeSmells: 0, duplicationPct: 0 } }
+    render(<OverviewTab result={clean} onSelectCategory={onSelectCategory} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /bugs - view findings/i }))
+
+    expect(onSelectCategory).toHaveBeenCalledWith('bug')
   })
 })

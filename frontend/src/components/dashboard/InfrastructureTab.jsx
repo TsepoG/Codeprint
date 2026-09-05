@@ -1,5 +1,6 @@
 import InfraGraph from './InfraGraph.jsx'
 import { SeverityBadge } from './shared.jsx'
+import { useScrollIntoView } from './useScrollIntoView.js'
 
 const MAX_ROWS = 100
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 }
@@ -14,7 +15,16 @@ function infraWarnings(warnings = []) {
   return warnings.filter((warning) => INFRA_TOOLS.some((tool) => warning.startsWith(tool)))
 }
 
-function InfrastructureTab({ infrastructure, warnings = [] }) {
+/**
+ * @param {object} props
+ * @param {object} props.infrastructure
+ * @param {string[]} [props.warnings]
+ * @param {string|null} [props.highlightFile] Set when the user got here via
+ *   "view in context" from an infra finding.
+ */
+function InfrastructureTab({ infrastructure, warnings = [], highlightFile }) {
+  const highlightRef = useScrollIntoView(highlightFile)
+
   if (!infrastructure?.detected) {
     return (
       <div className="dashboard-section">
@@ -32,6 +42,7 @@ function InfrastructureTab({ infrastructure, warnings = [] }) {
     return (a.resource ?? '').localeCompare(b.resource ?? '')
   })
   const shown = ranked.slice(0, MAX_ROWS)
+  const firstHighlightedIndex = highlightFile ? shown.findIndex((finding) => finding.file === highlightFile) : -1
 
   return (
     <div className="dashboard-section">
@@ -77,25 +88,36 @@ function InfrastructureTab({ infrastructure, warnings = [] }) {
               </tr>
             </thead>
             <tbody>
-              {shown.map((finding, index) => (
-                <tr key={`${finding.source}-${finding.ruleId}-${finding.file}-${finding.line}-${index}`}>
-                  <td className="file-name">{finding.resource ?? '—'}</td>
-                  <td>
-                    <span className="infra-rule-id">{finding.ruleId ?? '—'}</span>
-                    <span className="infra-rule-description">{finding.description}</span>
-                  </td>
-                  <td>
-                    <SeverityBadge severity={finding.severity} />
-                  </td>
-                  <td>
-                    <span className={`infra-source infra-source-${finding.source}`}>{finding.source}</span>
-                  </td>
-                  <td className="file-name">
-                    {finding.file ?? '—'}
-                    {finding.line != null && <span className="infra-line">:{finding.line}</span>}
-                  </td>
-                </tr>
-              ))}
+              {shown.map((finding, index) => {
+                const highlighted = finding.file === highlightFile
+                // Several findings can share a file; the ref goes on the
+                // first so scrolling lands at the top of the group.
+                const isScrollTarget = highlighted && firstHighlightedIndex === index
+
+                return (
+                  <tr
+                    key={`${finding.source}-${finding.ruleId}-${finding.file}-${finding.line}-${index}`}
+                    ref={isScrollTarget ? highlightRef : undefined}
+                    className={highlighted ? 'row-highlighted' : undefined}
+                  >
+                    <td className="file-name">{finding.resource ?? '—'}</td>
+                    <td>
+                      <span className="infra-rule-id">{finding.ruleId ?? '—'}</span>
+                      <span className="infra-rule-description">{finding.description}</span>
+                    </td>
+                    <td>
+                      <SeverityBadge severity={finding.severity} />
+                    </td>
+                    <td>
+                      <span className={`infra-source infra-source-${finding.source}`}>{finding.source}</span>
+                    </td>
+                    <td className="file-name">
+                      {finding.file ?? '—'}
+                      {finding.line != null && <span className="infra-line">:{finding.line}</span>}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
