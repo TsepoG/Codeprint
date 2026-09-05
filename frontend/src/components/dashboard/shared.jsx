@@ -100,8 +100,10 @@ export function SeverityBadge({ severity, label }) {
  * @param {string|null} [props.highlightFile] Name of a file to mark and
  *   scroll to - set when the user arrived here via "view in context" from a
  *   finding, so the row they asked about isn't left for them to find.
+ * @param {(name: string) => void} [props.onSelectFile] Makes the file name a
+ *   button opening that file's detail. Without it the table stays read-only.
  */
-export function FilesTable({ files, emptyMessage, highlightFile }) {
+export function FilesTable({ files, emptyMessage, highlightFile, onSelectFile }) {
   const highlightRef = useScrollIntoView(highlightFile)
 
   if (files.length === 0) {
@@ -128,7 +130,15 @@ export function FilesTable({ files, emptyMessage, highlightFile }) {
                 ref={highlighted ? highlightRef : undefined}
                 className={highlighted ? 'row-highlighted' : undefined}
               >
-                <td className="file-name">{file.name}</td>
+                <td className="file-name">
+                  {onSelectFile ? (
+                    <button type="button" className="file-name-button" onClick={() => onSelectFile(file.name)}>
+                      {file.name}
+                    </button>
+                  ) : (
+                    file.name
+                  )}
+                </td>
                 <td className="numeric">{file.complexity}</td>
                 <td className="numeric">{file.coverage == null ? '—' : `${file.coverage}%`}</td>
                 <td>

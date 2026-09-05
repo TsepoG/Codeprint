@@ -156,6 +156,11 @@ function normalizeCheckovFindings(checkovResult, targetDir) {
       ruleId: check.check_id ?? null,
       severity: mapInfraSeverity(check.severity),
       description: check.check_name ?? 'Checkov policy violation',
+      // checkov doesn't word a fix - it links its policy documentation,
+      // which is where the remediation actually lives.
+      remediation: null,
+      impact: null,
+      link: check.guideline ?? null,
       source: 'checkov',
     })),
   );
@@ -177,6 +182,11 @@ function normalizeTfsecFindings(tfsecResult, targetDir) {
     ruleId: result.long_id ?? result.rule_id ?? null,
     severity: mapInfraSeverity(result.severity),
     description: result.description ?? result.rule_description ?? 'tfsec policy violation',
+    // tfsec words both the consequence and the fix; keep them apart so the
+    // UI can lead with what to do rather than what goes wrong.
+    remediation: result.resolution ?? null,
+    impact: result.impact ?? null,
+    link: Array.isArray(result.links) ? (result.links[0] ?? null) : null,
     source: 'tfsec',
   }));
 }

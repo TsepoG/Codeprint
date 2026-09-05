@@ -56,6 +56,9 @@ function SnippetBlock({ snippet, caption }) {
 function FindingRow({ finding, onViewInContext, showLocation = true }) {
   const location = locationOf(finding)
   const hasSnippet = Boolean(finding.snippet) || Boolean(finding.duplicateOf?.snippet)
+  // Both halves captured: the pair can actually be compared. With only one,
+  // a side-by-side layout would just be a narrow column.
+  const isPair = Boolean(finding.snippet && finding.duplicateOf?.snippet)
 
   return (
     <li className="finding-row">
@@ -76,21 +79,23 @@ function FindingRow({ finding, onViewInContext, showLocation = true }) {
 
       {hasSnippet && (
         <details className="finding-snippet">
-          <summary>Snippet</summary>
-          {finding.snippet && (
-            <SnippetBlock
-              snippet={finding.snippet}
-              // A duplication finding shows two blocks, so each needs saying
-              // which half of the pair it is; every other finding has one.
-              caption={finding.duplicateOf ? location : undefined}
-            />
-          )}
-          {finding.duplicateOf?.snippet && (
-            <SnippetBlock
-              snippet={finding.duplicateOf.snippet}
-              caption={locationOf(finding.duplicateOf) ?? 'matching block'}
-            />
-          )}
+          <summary>{isPair ? 'Compare both copies' : 'Snippet'}</summary>
+
+          {/* A clone is a claim about two places at once, so the two blocks
+              go side by side and captioned - reading one above the other
+              makes the eye do the diffing from memory. Narrow viewports get
+              them stacked (see .snippet-pair). */}
+          <div className={isPair ? 'snippet-pair' : undefined}>
+            {finding.snippet && (
+              <SnippetBlock snippet={finding.snippet} caption={isPair ? location : undefined} />
+            )}
+            {finding.duplicateOf?.snippet && (
+              <SnippetBlock
+                snippet={finding.duplicateOf.snippet}
+                caption={locationOf(finding.duplicateOf) ?? 'matching block'}
+              />
+            )}
+          </div>
         </details>
       )}
 

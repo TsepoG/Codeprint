@@ -1,3 +1,5 @@
+import { splitNodeId } from './infraResource.js'
+
 const MAX_GRAPH_NODES = 60
 
 const NODE_W = 160
@@ -45,11 +47,7 @@ function orderByComponent(nodes, edges) {
   return ordered
 }
 
-/** Splits `envs/prod/aws_s3_bucket.assets` into its module path and resource name. */
-function splitNodeId(id) {
-  const cut = id.lastIndexOf('/')
-  return cut === -1 ? { modulePath: '', resource: id } : { modulePath: id.slice(0, cut), resource: id.slice(cut + 1) }
-}
+
 
 /**
  * Middle-truncates, because both ends of a resource name carry meaning -
@@ -72,8 +70,15 @@ function truncateEnd(text, max) {
  * wired with right-angle traces (a circuit/rack diagram), where the app's
  * dependency map uses circles on a radial layout - so the two views are
  * never mistaken for each other at a glance.
+ *
+ * @param {object} props
+ * @param {{id: string}[]} props.nodes
+ * @param {{from: string, to: string}[]} props.edges
+ * @param {(id: string) => void} [props.onSelectNode] Makes each resource a
+ *   button. Without it the diagram stays a plain figure.
+ * @param {string|null} [props.selectedNode]
  */
-function InfraGraph({ nodes, edges }) {
+function InfraGraph({ nodes, edges, onSelectNode, selectedNode }) {
   if (nodes.length === 0) {
     return <p className="empty-note">No infrastructure graph available for this repo.</p>
   }
@@ -141,8 +146,27 @@ function InfraGraph({ nodes, edges }) {
       {ordered.map((id) => {
         const pos = positions.get(id)
         const { modulePath, resource } = splitNodeId(id)
+        const selected = id === selectedNode
+        const className = `infra-node${selected ? ' selected' : ''}${onSelectNode ? ' clickable' : ''}`
+
+        const interaction = onSelectNode
+          ? {
+              role: 'button',
+              tabIndex: 0,
+              'aria-label': `${id} - view resource`,
+              onClick: () => onSelectNode(id),
+              onKeyDown: (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                // Space would otherwise scroll the page out from under the
+                // diagram; SVG gives no default activation behaviour.
+                event.preventDefault()
+                onSelectNode(id)
+              },
+            }
+          : {}
+
         return (
-          <g key={id} className="infra-node">
+          <g key={id} className={className} {...interaction}>
             <rect x={pos.x} y={pos.y} width={NODE_W} height={NODE_H} rx="2" />
             {modulePath && (
               <text x={pos.x + 8} y={pos.y + 15} className="infra-node-module">

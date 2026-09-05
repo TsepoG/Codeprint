@@ -150,7 +150,8 @@ describe('CodebaseDashboard', () => {
       expect(screen.queryByText('src/index.js')).not.toBeInTheDocument()
 
       switchTab(/hotspots/i)
-      expect(screen.getByText('src/index.js', { selector: 'td' })).toBeInTheDocument()
+      // The file name is the control that opens its detail panel.
+      expect(screen.getByRole('button', { name: 'src/index.js' })).toBeInTheDocument()
 
       switchTab(/dependency map/i)
       expect(screen.getByText(/1 files, 0 imports/i)).toBeInTheDocument()

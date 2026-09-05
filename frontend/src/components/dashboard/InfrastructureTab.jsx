@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import InfraGraph from './InfraGraph.jsx'
+import InfraDetailPanel from './InfraDetailPanel.jsx'
 import { SeverityBadge } from './shared.jsx'
 import { useScrollIntoView } from './useScrollIntoView.js'
+import { keyFromNode, keyFromFinding, sameResource } from './infraResource.js'
 
 const MAX_ROWS = 100
 const SEVERITY_RANK = { high: 0, medium: 1, low: 2 }
@@ -24,6 +27,9 @@ function infraWarnings(warnings = []) {
  */
 function InfrastructureTab({ infrastructure, warnings = [], highlightFile }) {
   const highlightRef = useScrollIntoView(highlightFile)
+  // A graph node and a findings row name the same resource two different
+  // ways, so the selection is held as the reduced key both reduce to.
+  const [selectedResource, setSelectedResource] = useState(null)
 
   if (!infrastructure?.detected) {
     return (
@@ -44,6 +50,12 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile }) {
   const shown = ranked.slice(0, MAX_ROWS)
   const firstHighlightedIndex = highlightFile ? shown.findIndex((finding) => finding.file === highlightFile) : -1
 
+  // Which graph node the current selection corresponds to, so selecting from
+  // the table marks the matching box in the diagram too.
+  const selectedNodeId = selectedResource
+    ? (graph.nodes.find((node) => sameResource(keyFromNode(node.id), selectedResource))?.id ?? null)
+    : null
+
   return (
     <div className="dashboard-section">
       {failures.length > 0 && (
@@ -60,8 +72,14 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile }) {
 
       <p className="section-caption">
         Resource graph - {graph.nodes.length} resources, {graph.edges.length} relationships
+        {graph.nodes.length > 0 && ' - select a resource for its detail'}
       </p>
-      <InfraGraph nodes={graph.nodes} edges={graph.edges} />
+      <InfraGraph
+        nodes={graph.nodes}
+        edges={graph.edges}
+        onSelectNode={(id) => setSelectedResource(keyFromNode(id))}
+        selectedNode={selectedNodeId}
+      />
 
       <h3 className="infra-findings-heading">
         Findings
@@ -100,7 +118,19 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile }) {
                     ref={isScrollTarget ? highlightRef : undefined}
                     className={highlighted ? 'row-highlighted' : undefined}
                   >
-                    <td className="file-name">{finding.resource ?? '—'}</td>
+                    <td className="file-name">
+                      {finding.resource ? (
+                        <button
+                          type="button"
+                          className="file-name-button"
+                          onClick={() => setSelectedResource(keyFromFinding(finding))}
+                        >
+                          {finding.resource}
+                        </button>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td>
                       <span className="infra-rule-id">{finding.ruleId ?? '—'}</span>
                       <span className="infra-rule-description">{finding.description}</span>
@@ -122,6 +152,12 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile }) {
           </table>
         </div>
       )}
+
+      <InfraDetailPanel
+        resourceKey={selectedResource}
+        findings={findings}
+        onClose={() => setSelectedResource(null)}
+      />
     </div>
   )
 }
