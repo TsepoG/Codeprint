@@ -373,9 +373,9 @@ test('attachSnippets does not follow a symlink out of the repo', async (t) => {
   const findings = [{ file: 'linked.js', line: 1, endLine: 1, snippet: null }];
   await attachSnippets(findings, workspace);
 
-  // Whether this resolves the symlink and reads the file, or refuses it
-  // outright, it must never leak the outside file's contents.
-  assert.ok(!findings[0].snippet?.text.includes('top secret'));
+  // The symlink's target resolves outside the repo, so it must be refused
+  // outright rather than followed - a null snippet, not a redacted one.
+  assert.equal(findings[0].snippet, null);
 });
 
 test('attachSnippets only reads a file once no matter how many findings point into it', async () => {
