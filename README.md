@@ -22,6 +22,11 @@ This is a monorepo with two packages:
    ```bash
    cd backend && docker build -f Dockerfile.scan-runner -t codeprint-scan-runner:latest .
    ```
+   This bundles the whole scan toolchain - eslint/madge/jscpd plus checkov,
+   tfsec, and inframap - so the first build takes a few minutes and pulls
+   roughly 700MB. Rebuild it whenever anything under
+   `backend/src/services/scan/` changes: the container runs a copy of that
+   code, so a scan will silently keep using the old version until you do.
 4. Run the backend:
    ```bash
    cd backend && npm run dev
@@ -44,7 +49,7 @@ A completed scan's normalized output is also sent to the Claude API to generate 
 
 ### Terraform scanning
 
-The clone phase checks whether the repo contains any `.tf` files (recursively, ignoring `.git`/`node_modules`/`.terraform`). If it doesn't, no infrastructure tooling runs at all and the response's `infrastructure` section is just `{ detected: false, findings: [] }`. If it does, the analyze phase additionally runs **checkov** (`-d <repo> -o json --framework terraform`) and **tfsec** (`<repo> --format json`), and the result gains:
+The clone phase records where the repo's Terraform lives - every directory that *directly* contains `.tf` files, plus any committed `.tfstate` - ignoring `.git`/`node_modules`/`.terraform`. If there is none, no infrastructure tooling runs at all and the response's `infrastructure` section is just `{ detected: false, findings: [], graph: { nodes: [], edges: [] } }`. If there is, the analyze phase additionally runs **checkov** (`-d <repo> -o json --framework terraform`), **tfsec** (`<repo> --format json`), and **inframap**, and the result gains:
 
 ```jsonc
 "infrastructure": {
@@ -59,11 +64,23 @@ The clone phase checks whether the repo contains any `.tf` files (recursively, i
       "description": "Ensure the S3 bucket has access logging enabled",
       "source": "checkov"                 // checkov | tfsec
     }
-  ]
+  ],
+  "graph": {                              // from inframap
+    "nodes": [{ "id": "aws_s3_bucket.assets" }],
+    "edges": [{ "from": "aws_instance.app", "to": "aws_security_group.web" }]
+  }
 }
 ```
 
-Both tools rate findings CRITICAL/HIGH/MEDIUM/LOW; those fold onto the same high/medium/low scale the rest of the app uses (CRITICAL and HIGH both become `high`; anything unrecognized, including checkov's `null` severity, becomes `low`). Each tool degrades the same way the JS tools do - if checkov or tfsec is missing, times out, or chokes on malformed HCL, it contributes a string to `warnings` and the rest of the scan (including the other infra tool) still completes.
+`infrastructure.graph` uses the same `{ nodes, edges }` shape as `dependencyGraph`, so the same rendering can draw either. A few things worth knowing about how it's built:
+
+- **inframap only emits Graphviz DOT** - it has no JSON printer - so its output is parsed into nodes and edges. Node names can themselves contain `->` (inframap represents public ingress as pseudo-nodes like `im_out.tcp/443->443`), which is why the parser tokenizes quoted names rather than splitting on the arrow.
+- **It reads one root module at a time and does not recurse**, so it's run once per Terraform directory and the results are merged. A directory it can't parse (a module that isn't a standalone root module, or Terraform 0.11-era syntax) is skipped, and the rest still graph - that becomes one aggregated warning rather than one per directory.
+- **Node ids are namespaced by module directory** (`envs/prod/aws_s3_bucket.assets`) for Terraform outside the repo root, because separate root modules routinely reuse resource names and merging an `envs/prod` bucket with an `envs/dev` one would draw edges between unrelated infrastructure. Terraform at the repo root keeps its bare name, so a single-module repo reads exactly as inframap named it.
+- **State beats source.** If the repo committed any `.tfstate`, the graph is built from that (it describes infrastructure that actually exists); otherwise it's built from HCL with `--hcl`.
+- Icons are disabled (`--show-icons=false`): icon mode writes PNG assets into a cache under `$HOME`, and the scan container's filesystem is read-only. Unconnected resources are kept (`--clean=false`) so a repo of standalone resources doesn't graph as nothing.
+
+Both scanners rate findings CRITICAL/HIGH/MEDIUM/LOW; those fold onto the same high/medium/low scale the rest of the app uses (CRITICAL and HIGH both become `high`; anything unrecognized, including checkov's `null` severity, becomes `low`). Each tool degrades the same way the JS tools do - if any of the three is missing, times out, or chokes on malformed HCL, it contributes a string to `warnings` and the rest of the scan (including the other infra tools) still completes.
 
 Terraform and JS scanning are fully independent: a repo can have both, either, or neither.
 
@@ -192,12 +209,14 @@ rather than landing directly on the host:
   a repo's `source = "..."` module references are only ever read as text.
   checkov and tfsec both run in the network-severed analyze phase, so even
   if one of them tried to resolve a remote module, it couldn't reach it.
-- **Both infra binaries are pinned and verified at image-build time.**
-  checkov is installed at an exact version, and tfsec's release tarball is
-  checked against a hardcoded sha256 before it's unpacked or made
-  executable (see `Dockerfile.scan-runner`) - these are binaries we hand
-  untrusted input to, so a silently-swapped download shouldn't be able to
-  become code execution.
+- **The infra binaries are pinned and verified at image-build time.**
+  checkov is installed at an exact version, and the tfsec and inframap
+  release tarballs are each checked against a hardcoded sha256 before being
+  unpacked or made executable (see `Dockerfile.scan-runner`) - these are
+  binaries we hand untrusted input to, so a silently-swapped download
+  shouldn't be able to become code execution. (inframap is pinned to 0.8.0
+  rather than the newer 0.8.1 tag for a mundane reason: 0.8.1 publishes no
+  release binaries.)
 
 ### 4. Tests
 

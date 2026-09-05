@@ -284,7 +284,7 @@ test('npm audit: a skipped tool (no lockfile) yields zero vulnerabilities and a 
 test('infrastructure: reports detected false with no findings when no .tf files were found', () => {
   const result = normalizeScanResults({ ...jsTools(), hasTerraform: false });
 
-  assert.deepEqual(result.infrastructure, { detected: false, findings: [] });
+  assert.deepEqual(result.infrastructure, { detected: false, findings: [], graph: { nodes: [], edges: [] } });
 });
 
 test('infrastructure: a JS-only repo gains no extra warnings from the infra section', () => {
@@ -293,7 +293,7 @@ test('infrastructure: a JS-only repo gains no extra warnings from the infra sect
 
   assert.deepEqual(withInfraArg.warnings, []);
   assert.deepEqual(withoutInfraArg.warnings, []);
-  assert.deepEqual(withoutInfraArg.infrastructure, { detected: false, findings: [] });
+  assert.deepEqual(withoutInfraArg.infrastructure, { detected: false, findings: [], graph: { nodes: [], edges: [] } });
 });
 
 test('infrastructure: never runs the infra tools implicitly - a result passed with hasTerraform false is ignored', () => {
@@ -304,7 +304,7 @@ test('infrastructure: never runs the infra tools implicitly - a result passed wi
     tfsecResult: tfsecOk(),
   });
 
-  assert.deepEqual(result.infrastructure, { detected: false, findings: [] });
+  assert.deepEqual(result.infrastructure, { detected: false, findings: [], graph: { nodes: [], edges: [] } });
 });
 
 test('infrastructure: maps checkov failed checks onto the unified finding shape', () => {
@@ -406,7 +406,7 @@ test('infrastructure: both tools failing still reports detected true, with no fi
     tfsecResult: { ok: false, reason: 'tfsec reason' },
   });
 
-  assert.deepEqual(result.infrastructure, { detected: true, findings: [] });
+  assert.deepEqual(result.infrastructure, { detected: true, findings: [], graph: { nodes: [], edges: [] } });
   assert.deepEqual(result.warnings, ['checkov reason', 'tfsec reason']);
 });
 
@@ -428,7 +428,7 @@ test('infrastructure: handles tfsec reporting a clean scan as results: null', ()
     tfsecResult: { ok: true, report: { results: null } },
   });
 
-  assert.deepEqual(infrastructure, { detected: true, findings: [] });
+  assert.deepEqual(infrastructure, { detected: true, findings: [], graph: { nodes: [], edges: [] } });
 });
 
 test('infrastructure: infra warnings come after the JS tools\' warnings', () => {
@@ -444,6 +444,149 @@ test('infrastructure: infra warnings come after the JS tools\' warnings', () => 
   });
 
   assert.deepEqual(result.warnings, ['eslint reason', 'audit reason', 'checkov reason']);
+});
+
+// Verbatim inframap 0.8.0 output (--show-icons=false --clean=false).
+const DOT_SIMPLE = `strict digraph G {
+\t"aws_instance.prod_app"->"aws_security_group.sg";
+\t"aws_instance.prod_app" [ shape=ellipse ];
+\t"aws_s3_bucket.prod_assets" [ shape=ellipse ];
+\t"aws_security_group.sg" [ shape=rectangle ];
+
+}
+`;
+
+// inframap's external "im_out" nodes carry `->` *inside* the node name.
+const DOT_WITH_ARROW_IN_NAME = `strict digraph G {
+\t"aws_db_instance.db"->"aws_instance.app";
+\t"im_out.tcp/443->443"->"aws_instance.app";
+\t"im_out.tcp/443->443"->"aws_db_instance.db";
+\t"aws_db_instance.db" [ shape=ellipse ];
+\t"aws_instance.app" [ shape=ellipse ];
+\t"im_out.tcp/443->443" [ shape=ellipse ];
+
+}
+`;
+
+function inframapOk(graphs, skipped = []) {
+  return { ok: true, graphs, skipped };
+}
+
+test('infrastructure graph: parses inframap DOT into the dependencyGraph node/edge shape', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    inframapResult: inframapOk([{ dir: '', dot: DOT_SIMPLE }]),
+  });
+
+  assert.deepEqual(infrastructure.graph.nodes, [
+    { id: 'aws_instance.prod_app' },
+    { id: 'aws_security_group.sg' },
+    { id: 'aws_s3_bucket.prod_assets' },
+  ]);
+  assert.deepEqual(infrastructure.graph.edges, [
+    { from: 'aws_instance.prod_app', to: 'aws_security_group.sg' },
+  ]);
+});
+
+test('infrastructure graph: keeps resources that have no edges', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    inframapResult: inframapOk([{ dir: '', dot: DOT_SIMPLE }]),
+  });
+
+  assert.ok(infrastructure.graph.nodes.some((n) => n.id === 'aws_s3_bucket.prod_assets'));
+});
+
+test('infrastructure graph: does not split node names that themselves contain "->"', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    inframapResult: inframapOk([{ dir: '', dot: DOT_WITH_ARROW_IN_NAME }]),
+  });
+
+  assert.ok(
+    infrastructure.graph.nodes.some((n) => n.id === 'im_out.tcp/443->443'),
+    'the external node name should survive intact',
+  );
+  assert.equal(infrastructure.graph.nodes.length, 3);
+  assert.deepEqual(infrastructure.graph.edges, [
+    { from: 'aws_db_instance.db', to: 'aws_instance.app' },
+    { from: 'im_out.tcp/443->443', to: 'aws_instance.app' },
+    { from: 'im_out.tcp/443->443', to: 'aws_db_instance.db' },
+  ]);
+});
+
+test('infrastructure graph: namespaces nodes by module directory so separate root modules never merge', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    inframapResult: inframapOk([
+      { dir: 'envs/prod', dot: 'strict digraph G {\n\t"aws_s3_bucket.assets" [ shape=ellipse ];\n}\n' },
+      { dir: 'envs/dev', dot: 'strict digraph G {\n\t"aws_s3_bucket.assets" [ shape=ellipse ];\n}\n' },
+    ]),
+  });
+
+  assert.deepEqual(infrastructure.graph.nodes, [
+    { id: 'envs/prod/aws_s3_bucket.assets' },
+    { id: 'envs/dev/aws_s3_bucket.assets' },
+  ]);
+});
+
+test('infrastructure graph: merges several directories and dedupes repeated edges', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    inframapResult: inframapOk([
+      { dir: '', dot: DOT_SIMPLE },
+      { dir: '', dot: DOT_SIMPLE }, // same graph twice
+    ]),
+  });
+
+  assert.equal(infrastructure.graph.nodes.length, 3);
+  assert.equal(infrastructure.graph.edges.length, 1);
+});
+
+test('infrastructure graph: is empty when inframap failed, and the failure becomes a warning', () => {
+  const result = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    inframapResult: { ok: false, reason: 'inframap failed to run: spawn inframap ENOENT' },
+  });
+
+  assert.deepEqual(result.infrastructure.graph, { nodes: [], edges: [] });
+  assert.deepEqual(result.warnings, ['inframap failed to run: spawn inframap ENOENT']);
+});
+
+test('infrastructure graph: partly-skipped directories produce one aggregated warning', () => {
+  const result = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    inframapResult: inframapOk(
+      [{ dir: 'good', dot: DOT_SIMPLE }],
+      [{ dir: 'broken', reason: 'boom' }, { dir: 'also-broken', reason: 'boom' }],
+    ),
+  });
+
+  assert.equal(result.infrastructure.graph.nodes.length, 3);
+  assert.deepEqual(result.warnings, ['inframap could not graph 2 Terraform directories']);
+});
+
+test('infrastructure graph: a single skipped directory is described in the singular', () => {
+  const result = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    inframapResult: inframapOk([{ dir: 'good', dot: DOT_SIMPLE }], [{ dir: 'broken', reason: 'boom' }]),
+  });
+
+  assert.deepEqual(result.warnings, ['inframap could not graph 1 Terraform directory']);
+});
+
+test('infrastructure graph: a JS-only repo reports an empty graph without running inframap', () => {
+  const { infrastructure } = normalizeScanResults({ ...jsTools(), hasTerraform: false });
+
+  assert.deepEqual(infrastructure, { detected: false, findings: [], graph: { nodes: [], edges: [] } });
 });
 
 test('collects one warning per skipped tool, in eslint/madge/jscpd/audit order', () => {
