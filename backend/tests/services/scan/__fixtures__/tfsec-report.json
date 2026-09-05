@@ -1,0 +1,43 @@
+{
+  "results": [
+    {
+      "rule_id": "AVD-AWS-0088",
+      "long_id": "aws-s3-enable-bucket-encryption",
+      "rule_description": "Unencrypted S3 bucket.",
+      "rule_provider": "aws",
+      "rule_service": "s3",
+      "impact": "The bucket objects could be read if compromised",
+      "resolution": "Configure bucket encryption",
+      "severity": "CRITICAL",
+      "resource": "aws_s3_bucket.data",
+      "description": "Bucket does not have encryption enabled",
+      "location": { "filename": "infra/s3.tf", "start_line": 12, "end_line": 20 }
+    },
+    {
+      "rule_id": "AVD-AWS-0107",
+      "long_id": "aws-ec2-no-public-ingress-sgr",
+      "rule_description": "An ingress security group rule allows traffic from /0.",
+      "rule_provider": "aws",
+      "rule_service": "ec2",
+      "impact": "Your port exposed to the internet",
+      "resolution": "Set a more restrictive cidr range",
+      "severity": "MEDIUM",
+      "resource": "aws_security_group_rule.web_ingress",
+      "description": "Security group rule allows ingress from public internet",
+      "location": { "filename": "network.tf", "start_line": 14, "end_line": 18 }
+    },
+    {
+      "rule_id": "AVD-AWS-0132",
+      "long_id": "aws-s3-encryption-customer-key",
+      "rule_description": "S3 encryption should use Customer Managed Keys.",
+      "rule_provider": "aws",
+      "rule_service": "s3",
+      "impact": "Using AWS managed keys does not allow for fine grained control",
+      "resolution": "Enable encryption using customer managed keys",
+      "severity": "LOW",
+      "resource": "aws_s3_bucket.data",
+      "description": "Bucket does not encrypt data with a customer managed key",
+      "location": { "filename": "infra/s3.tf", "start_line": 12, "end_line": 20 }
+    }
+  ]
+}

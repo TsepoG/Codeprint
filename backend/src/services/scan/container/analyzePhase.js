@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Entry point for the network-disabled ("--network none") "analyze"
 // container (see ../../../../Dockerfile.scan-runner and ../dockerRunner.js).
-// Runs eslint/madge/jscpd against the workspace volume clonePhase.js
-// already populated (mounted here read-only) and produces the final
-// unified scan response, folding in clonePhase's npm-audit result (passed
-// through as an env var, since it ran in a different container). Writes
-// exactly one JSON line to stdout. Never throws past `main()`.
+// Runs eslint/madge/jscpd - plus checkov/tfsec when clonePhase.js found
+// Terraform - against the workspace clonePhase.js already populated, and
+// produces the final unified scan response, folding in clonePhase's
+// npm-audit result and its .tf detection (both passed through as env vars,
+// since that phase ran as a separate exec). Writes exactly one JSON line to
+// stdout. Never throws past `main()`.
 import { analyzePhase } from '../index.js';
 import { WORKSPACE } from './workspace.js';
 
@@ -29,7 +30,7 @@ function readAuditResult() {
 
 async function main() {
   try {
-    const result = await analyzePhase(WORKSPACE, readAuditResult());
+    const result = await analyzePhase(WORKSPACE, readAuditResult(), process.env.CODEPRINT_HAS_TERRAFORM === 'true');
     report({ ok: true, result });
   } catch (err) {
     report({ ok: false, error: err.name, message: err.message });

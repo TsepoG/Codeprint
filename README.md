@@ -42,11 +42,39 @@ Every scan that reaches a terminal state (complete or failed) is written to a SQ
 
 A completed scan's normalized output is also sent to the Claude API to generate a short narrative - a plain-English health summary plus a bulleted gap analysis - attached as `result.narrative`. This step requires an `ANTHROPIC_API_KEY` (see `backend/.env.example`); without one (or if the API call fails/times out), the scan still completes normally, it just has no `narrative`.
 
+### Terraform scanning
+
+The clone phase checks whether the repo contains any `.tf` files (recursively, ignoring `.git`/`node_modules`/`.terraform`). If it doesn't, no infrastructure tooling runs at all and the response's `infrastructure` section is just `{ detected: false, findings: [] }`. If it does, the analyze phase additionally runs **checkov** (`-d <repo> -o json --framework terraform`) and **tfsec** (`<repo> --format json`), and the result gains:
+
+```jsonc
+"infrastructure": {
+  "detected": true,
+  "findings": [
+    {
+      "resource": "aws_s3_bucket.data",   // as named by the tool
+      "file": "infra/s3.tf",              // repo-relative
+      "line": 12,
+      "ruleId": "CKV_AWS_18",
+      "severity": "high",                 // high | medium | low
+      "description": "Ensure the S3 bucket has access logging enabled",
+      "source": "checkov"                 // checkov | tfsec
+    }
+  ]
+}
+```
+
+Both tools rate findings CRITICAL/HIGH/MEDIUM/LOW; those fold onto the same high/medium/low scale the rest of the app uses (CRITICAL and HIGH both become `high`; anything unrecognized, including checkov's `null` severity, becomes `low`). Each tool degrades the same way the JS tools do - if checkov or tfsec is missing, times out, or chokes on malformed HCL, it contributes a string to `warnings` and the rest of the scan (including the other infra tool) still completes.
+
+Terraform and JS scanning are fully independent: a repo can have both, either, or neither.
+
+**Known gap:** findings are *not* deduplicated across the two tools. checkov and tfsec frequently flag the same underlying issue under different rule ids, so a repo scanned by both will show it twice - once per `source`. Merging them needs a mapping between the two rule sets, which isn't built yet (there's a matching `TODO` in `normalize.js`).
+
 ## Security: `POST /api/scan` runs tools against untrusted, cloned code
 
 The scan endpoint shallow-clones an arbitrary repo and runs eslint,
-madge, jscpd, and `npm audit` against it. Treat the contents of that
-clone as **hostile input**, not as trusted code. This section covers
+madge, jscpd, and `npm audit` against it - plus checkov and tfsec when
+the repo contains Terraform. Treat the contents of that clone as
+**hostile input**, not as trusted code. This section covers
 each layer of protection, roughly in the order a request passes through
 them.
 
@@ -117,13 +145,14 @@ into it twice, reading one JSON line back from each `exec`'s stdout:
   *running* container - fully severing its network interfaces, verified
   (not just configured) to actually cut off connectivity, not merely
   block new connections - before `docker exec`ing
-  `container/analyzePhase.js`. eslint/madge/jscpd are pure static
-  analysis over files already on disk and never need network, so denying
-  it entirely means a malicious repo can't exfiltrate anything or reach
-  other hosts during this phase even if one of these tools has an
-  RCE-class bug. Both phases run in the same container and so share its
-  filesystem directly (`container/workspace.js`) - no volume or bind
-  mount needed between them.
+  `container/analyzePhase.js`. eslint/madge/jscpd - and checkov/tfsec,
+  when the repo has Terraform - are pure static analysis over files
+  already on disk and never need network, so denying it entirely means a
+  malicious repo can't exfiltrate anything or reach other hosts during
+  this phase even if one of these tools has an RCE-class bug. Both phases
+  run in the same container and so share its filesystem directly
+  (`container/workspace.js`) - no volume or bind mount needed between
+  them.
 - `--rm` plus a unique `--name`: the container (and everything it wrote,
   entirely to its own tmpfs) is destroyed as soon as it's stopped,
   whether normally or via the timeout backstop above.
@@ -158,6 +187,17 @@ rather than landing directly on the host:
   `eslint.config.js` can specify arbitrary plugins/parsers to load, which
   ESLint will `require()`/`import()` as part of "linting" - that's also
   code execution over untrusted input if we ever let it run.
+- **The Terraform scanners are never given the chance to fetch anything.**
+  Neither `terraform init` nor any module/provider download ever runs, so
+  a repo's `source = "..."` module references are only ever read as text.
+  checkov and tfsec both run in the network-severed analyze phase, so even
+  if one of them tried to resolve a remote module, it couldn't reach it.
+- **Both infra binaries are pinned and verified at image-build time.**
+  checkov is installed at an exact version, and tfsec's release tarball is
+  checked against a hardcoded sha256 before it's unpacked or made
+  executable (see `Dockerfile.scan-runner`) - these are binaries we hand
+  untrusted input to, so a silently-swapped download shouldn't be able to
+  become code execution.
 
 ### 4. Tests
 

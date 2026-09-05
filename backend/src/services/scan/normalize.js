@@ -111,6 +111,124 @@ function normalizeDuplicationPct(jscpdResult) {
   return typeof pct === 'number' ? pct : 0;
 }
 
+// Both infra tools rate findings on their own CRITICAL/HIGH/MEDIUM/LOW
+// scales; fold those onto the same high/medium/low the eslint-derived
+// `files` list already uses, so the UI has one severity vocabulary. Anything
+// unrecognized (including checkov's `null`, which it uses for checks with no
+// published severity) lands on 'low' rather than inventing urgency.
+const INFRA_SEVERITY = { CRITICAL: 'high', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
+
+/** @param {unknown} raw @returns {'high'|'medium'|'low'} */
+function mapInfraSeverity(raw) {
+  return INFRA_SEVERITY[String(raw).toUpperCase()] ?? 'low';
+}
+
+/**
+ * Normalizes a path reported by an infra tool to a repo-relative, posix-style
+ * name.
+ *
+ * The two tools disagree about what they report: tfsec echoes back the
+ * absolute path it was handed, while checkov reports scan-root-relative paths
+ * with a leading slash (`/main.tf`) - which *looks* absolute to
+ * `path.isAbsolute` but isn't, so testing against `targetDir` is what
+ * actually separates the two cases.
+ *
+ * @param {string|undefined} rawPath
+ * @param {string} targetDir
+ * @returns {string|null}
+ */
+function relativizeInfraPath(rawPath, targetDir) {
+  if (typeof rawPath !== 'string' || rawPath === '') return null;
+  if (rawPath.startsWith(`${targetDir}${path.sep}`) || rawPath.startsWith(`${targetDir}/`)) {
+    return toPosixRelative(targetDir, rawPath);
+  }
+  return rawPath.replace(/^[./\\]+/, '');
+}
+
+/**
+ * @param {import('./tools/checkov.js').CheckovOk|{ok: false}|undefined} checkovResult
+ * @param {string} targetDir
+ * @returns {object[]}
+ */
+function normalizeCheckovFindings(checkovResult, targetDir) {
+  if (!checkovResult?.ok) return [];
+
+  // checkov emits one report object per scanned framework, and an array of
+  // them when it scanned more than one.
+  const reports = Array.isArray(checkovResult.report) ? checkovResult.report : [checkovResult.report];
+
+  return reports.flatMap((report) =>
+    (report?.results?.failed_checks ?? []).map((check) => ({
+      resource: check.resource ?? null,
+      file: relativizeInfraPath(check.file_path, targetDir),
+      line: Array.isArray(check.file_line_range) ? check.file_line_range[0] : null,
+      ruleId: check.check_id ?? null,
+      severity: mapInfraSeverity(check.severity),
+      description: check.check_name ?? 'Checkov policy violation',
+      source: 'checkov',
+    })),
+  );
+}
+
+/**
+ * @param {import('./tools/tfsec.js').TfsecOk|{ok: false}|undefined} tfsecResult
+ * @param {string} targetDir
+ * @returns {object[]}
+ */
+function normalizeTfsecFindings(tfsecResult, targetDir) {
+  if (!tfsecResult?.ok) return [];
+
+  // tfsec reports `"results": null` (not []) for a clean scan.
+  return (tfsecResult.report?.results ?? []).map((result) => ({
+    resource: result.resource ?? null,
+    file: relativizeInfraPath(result.location?.filename, targetDir),
+    line: result.location?.start_line ?? null,
+    ruleId: result.long_id ?? result.rule_id ?? null,
+    severity: mapInfraSeverity(result.severity),
+    description: result.description ?? result.rule_description ?? 'tfsec policy violation',
+    source: 'tfsec',
+  }));
+}
+
+/**
+ * Builds the `infrastructure` section from the two Terraform scanners, plus
+ * a warning for whichever of them failed.
+ *
+ * When no `.tf` files were found (see `detectTerraform.js`), neither tool is
+ * run at all and this reports `detected: false` with no findings and no
+ * warnings - a JS-only repo's response is unchanged apart from the extra
+ * empty section.
+ *
+ * @param {object} params
+ * @param {boolean} params.hasTerraform
+ * @param {import('./tools/checkov.js').CheckovOk|{ok: false, reason: string}|undefined} params.checkovResult
+ * @param {import('./tools/tfsec.js').TfsecOk|{ok: false, reason: string}|undefined} params.tfsecResult
+ * @param {string} params.targetDir
+ * @returns {{infrastructure: {detected: boolean, findings: object[]}, warnings: string[]}}
+ */
+function normalizeInfrastructure({ hasTerraform, checkovResult, tfsecResult, targetDir }) {
+  if (!hasTerraform) {
+    return { infrastructure: { detected: false, findings: [] }, warnings: [] };
+  }
+
+  // TODO: checkov and tfsec frequently flag the same underlying problem (an
+  // unencrypted bucket, say) under different rule ids, so a repo scanned by
+  // both currently shows each issue twice - once per source. Deduping needs
+  // a mapping between the two rule sets (or matching on
+  // resource+file+line+intent), which isn't built yet; until then every
+  // finding is just tagged with the `source` that produced it.
+  const findings = [
+    ...normalizeCheckovFindings(checkovResult, targetDir),
+    ...normalizeTfsecFindings(tfsecResult, targetDir),
+  ];
+
+  const warnings = [checkovResult, tfsecResult]
+    .filter((result) => result && !result.ok)
+    .map((result) => result.reason);
+
+  return { infrastructure: { detected: true, findings }, warnings };
+}
+
 /**
  * @param {import('./tools/madge.js').MadgeOk|{ok: false}|undefined} madgeResult
  * @returns {{nodes: {id: string}[], edges: {from: string, to: string}[]}}
@@ -138,20 +256,41 @@ function normalizeDependencyGraph(madgeResult) {
  * @param {import('./tools/madge.js').MadgeOk|{ok: false, reason: string}} params.madgeResult
  * @param {import('./tools/jscpd.js').JscpdOk|{ok: false, reason: string}} params.jscpdResult
  * @param {import('./tools/npmAudit.js').NpmAuditOk|{ok: false, reason: string}} params.auditResult
+ * @param {boolean} [params.hasTerraform] Whether `clonePhase` found any `.tf`
+ *   files. When false (or absent), the infra tools never ran.
+ * @param {import('./tools/checkov.js').CheckovOk|{ok: false, reason: string}} [params.checkovResult]
+ * @param {import('./tools/tfsec.js').TfsecOk|{ok: false, reason: string}} [params.tfsecResult]
  * @param {string} params.targetDir Absolute path to the cloned repo.
  * @returns {{
  *   metrics: {bugs: number, vulnerabilities: number, codeSmells: number, duplicationPct: number},
  *   files: object[],
  *   dependencyGraph: {nodes: object[], edges: object[]},
+ *   infrastructure: {detected: boolean, findings: object[]},
  *   warnings: string[],
  * }}
  */
-export function normalizeScanResults({ eslintResult, madgeResult, jscpdResult, auditResult, targetDir }) {
+export function normalizeScanResults({
+  eslintResult,
+  madgeResult,
+  jscpdResult,
+  auditResult,
+  hasTerraform = false,
+  checkovResult,
+  tfsecResult,
+  targetDir,
+}) {
   const { files, bugs, codeSmells } = normalizeEslint(eslintResult, targetDir);
+  const { infrastructure, warnings: infraWarnings } = normalizeInfrastructure({
+    hasTerraform,
+    checkovResult,
+    tfsecResult,
+    targetDir,
+  });
 
   const warnings = [eslintResult, madgeResult, jscpdResult, auditResult]
     .filter((result) => result && !result.ok)
-    .map((result) => result.reason);
+    .map((result) => result.reason)
+    .concat(infraWarnings);
 
   return {
     metrics: {
@@ -162,6 +301,7 @@ export function normalizeScanResults({ eslintResult, madgeResult, jscpdResult, a
     },
     files,
     dependencyGraph: normalizeDependencyGraph(madgeResult),
+    infrastructure,
     warnings,
   };
 }
