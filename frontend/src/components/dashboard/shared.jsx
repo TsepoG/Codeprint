@@ -1,3 +1,5 @@
+import { useScrollIntoView } from './useScrollIntoView.js'
+
 const MAX_GRAPH_NODES = 60
 
 const SEVERITY = {
@@ -13,6 +15,32 @@ function meterSeverity(pct) {
 }
 
 /**
+ * Renders a tile as a plain block, or as a button when `onClick` is given -
+ * a tile that does nothing shouldn't advertise itself as pressable, and one
+ * that does needs to be reachable by keyboard, so the element itself changes
+ * rather than a click handler being bolted onto a div.
+ *
+ * @param {object} props
+ * @param {string} props.className
+ * @param {() => void} [props.onClick]
+ * @param {string} [props.actionLabel] Accessible name for the button form,
+ *   which needs to say what opens - the visible label/value alone reads as
+ *   "Bugs 3" with no hint that it does anything.
+ * @param {import('react').ReactNode} props.children
+ */
+function Tile({ className, onClick, actionLabel, children }) {
+  if (!onClick) {
+    return <div className={className}>{children}</div>
+  }
+
+  return (
+    <button type="button" className={`${className} stat-tile-button`} onClick={onClick} aria-label={actionLabel}>
+      {children}
+    </button>
+  )
+}
+
+/**
  * @param {object} props
  * @param {string} props.label
  * @param {string} props.value
@@ -20,22 +48,28 @@ function meterSeverity(pct) {
  *   severity-coloured left border. Tiles that are a plain count (bugs, code
  *   smells) leave it off - a colour there would imply a judgement the number
  *   alone doesn't carry.
+ * @param {() => void} [props.onClick] Makes the tile a button (see {@link Tile}).
+ * @param {string} [props.actionLabel]
  */
-export function StatTile({ label, value, severity }) {
+export function StatTile({ label, value, severity, onClick, actionLabel }) {
   const severityClass = severity ? `stat-tile-${SEVERITY[severity] ? SEVERITY[severity].className : 'good'}` : ''
   return (
-    <div className={`stat-tile blueprint-panel ${severityClass}`.trim()}>
+    <Tile
+      className={`stat-tile blueprint-panel ${severityClass}`.trim()}
+      onClick={onClick}
+      actionLabel={actionLabel}
+    >
       <span className="stat-tile-label">{label}</span>
       <span className="stat-tile-value">{value}</span>
-    </div>
+    </Tile>
   )
 }
 
-export function DuplicationMeter({ pct }) {
+export function DuplicationMeter({ pct, onClick, actionLabel }) {
   const clamped = Math.max(0, Math.min(100, Number(pct) || 0))
   const severity = meterSeverity(clamped)
   return (
-    <div className="stat-tile blueprint-panel">
+    <Tile className="stat-tile blueprint-panel" onClick={onClick} actionLabel={actionLabel}>
       <span className="stat-tile-label">Duplication</span>
       <span className="stat-tile-value">{clamped.toFixed(1)}%</span>
       <div
@@ -45,7 +79,7 @@ export function DuplicationMeter({ pct }) {
       >
         <div className={`meter-fill ${severity}`} style={{ width: `${clamped}%` }} />
       </div>
-    </div>
+    </Tile>
   )
 }
 
@@ -59,7 +93,17 @@ export function SeverityBadge({ severity, label }) {
   )
 }
 
-export function FilesTable({ files, emptyMessage }) {
+/**
+ * @param {object} props
+ * @param {object[]} props.files
+ * @param {string} props.emptyMessage
+ * @param {string|null} [props.highlightFile] Name of a file to mark and
+ *   scroll to - set when the user arrived here via "view in context" from a
+ *   finding, so the row they asked about isn't left for them to find.
+ */
+export function FilesTable({ files, emptyMessage, highlightFile }) {
+  const highlightRef = useScrollIntoView(highlightFile)
+
   if (files.length === 0) {
     return <p className="empty-note">{emptyMessage}</p>
   }
@@ -76,16 +120,23 @@ export function FilesTable({ files, emptyMessage }) {
           </tr>
         </thead>
         <tbody>
-          {files.map((file) => (
-            <tr key={file.name}>
-              <td className="file-name">{file.name}</td>
-              <td className="numeric">{file.complexity}</td>
-              <td className="numeric">{file.coverage == null ? '—' : `${file.coverage}%`}</td>
-              <td>
-                <SeverityBadge severity={file.severity} />
-              </td>
-            </tr>
-          ))}
+          {files.map((file) => {
+            const highlighted = file.name === highlightFile
+            return (
+              <tr
+                key={file.name}
+                ref={highlighted ? highlightRef : undefined}
+                className={highlighted ? 'row-highlighted' : undefined}
+              >
+                <td className="file-name">{file.name}</td>
+                <td className="numeric">{file.complexity}</td>
+                <td className="numeric">{file.coverage == null ? '—' : `${file.coverage}%`}</td>
+                <td>
+                  <SeverityBadge severity={file.severity} />
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

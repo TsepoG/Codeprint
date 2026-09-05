@@ -13,17 +13,32 @@ function worstSeverity(findings) {
   return 'low'
 }
 
-function OverviewTab({ result }) {
+/**
+ * @param {object} props
+ * @param {object} props.result
+ * @param {(category: string) => void} [props.onSelectCategory] Opens the
+ *   detail panel for a metric. Without it the tiles stay plain blocks, so
+ *   this component still renders standalone.
+ */
+function OverviewTab({ result, onSelectCategory }) {
   const infrastructure = result.infrastructure
   const infraFindings = infrastructure?.findings ?? []
+
+  /** @param {string} category @param {string} label */
+  const open = (category, label) =>
+    onSelectCategory ? { onClick: () => onSelectCategory(category), actionLabel: `${label} - view findings` } : {}
 
   return (
     <div className="dashboard-section">
       <section className="kpi-row" aria-label="Scan metrics">
-        <StatTile label="Bugs" value={formatCount(result.metrics.bugs)} />
-        <StatTile label="Vulnerabilities" value={formatCount(result.metrics.vulnerabilities)} />
-        <StatTile label="Code smells" value={formatCount(result.metrics.codeSmells)} />
-        <DuplicationMeter pct={result.metrics.duplicationPct} />
+        <StatTile label="Bugs" value={formatCount(result.metrics.bugs)} {...open('bug', 'Bugs')} />
+        <StatTile
+          label="Vulnerabilities"
+          value={formatCount(result.metrics.vulnerabilities)}
+          {...open('vulnerability', 'Vulnerabilities')}
+        />
+        <StatTile label="Code smells" value={formatCount(result.metrics.codeSmells)} {...open('codeSmell', 'Code smells')} />
+        <DuplicationMeter pct={result.metrics.duplicationPct} {...open('duplication', 'Duplication')} />
         {/* Only for repos that actually have Terraform - a permanent "0" on
             every JS repo would be noise, not information. */}
         {infrastructure?.detected && (
@@ -31,6 +46,7 @@ function OverviewTab({ result }) {
             label="Infra findings"
             value={formatCount(infraFindings.length)}
             severity={worstSeverity(infraFindings)}
+            {...open('infra', 'Infra findings')}
           />
         )}
       </section>

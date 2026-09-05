@@ -118,6 +118,34 @@ describe('InfrastructureTab', () => {
     expect(screen.getByText('aws_s3_bucket.assets')).toBeInTheDocument()
   })
 
+  it('marks the findings for the file a view-in-context jump asked for', () => {
+    render(<InfrastructureTab infrastructure={DETECTED} highlightFile="infra/network.tf" />)
+
+    const highlighted = within(screen.getByRole('table')).getByText('aws_security_group.web').closest('tr')
+    expect(highlighted).toHaveClass('row-highlighted')
+
+    const other = within(screen.getByRole('table')).getByText('aws_s3_bucket.assets').closest('tr')
+    expect(other).not.toHaveClass('row-highlighted')
+  })
+
+  it('marks every finding sharing the highlighted file, not just the first', () => {
+    const twoInOneFile = {
+      ...DETECTED,
+      findings: [
+        FINDINGS[0],
+        { ...FINDINGS[0], resource: 'aws_s3_bucket.other', ruleId: 'CKV_AWS_21' },
+      ],
+    }
+    const { container } = render(<InfrastructureTab infrastructure={twoInOneFile} highlightFile="infra/s3.tf" />)
+
+    expect(container.querySelectorAll('.row-highlighted')).toHaveLength(2)
+  })
+
+  it('renders normally when nothing is highlighted', () => {
+    const { container } = render(<InfrastructureTab infrastructure={DETECTED} />)
+    expect(container.querySelectorAll('.row-highlighted')).toHaveLength(0)
+  })
+
   it('caps very long findings lists and says how many it is showing', () => {
     const many = Array.from({ length: 150 }, (_, i) => ({
       ...FINDINGS[0],

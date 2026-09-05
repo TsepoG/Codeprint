@@ -5,6 +5,7 @@ import DependencyMapTab from './dashboard/DependencyMapTab.jsx'
 import HotspotsTab from './dashboard/HotspotsTab.jsx'
 import HistoryTab from './dashboard/HistoryTab.jsx'
 import InfrastructureTab from './dashboard/InfrastructureTab.jsx'
+import FindingsPanel from './dashboard/FindingsPanel.jsx'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const POLL_INTERVAL_MS = 2500
@@ -12,6 +13,18 @@ const POLL_INTERVAL_MS = 2500
 const STATUS_MESSAGES = {
   queued: 'Waiting for the scan to start…',
   running: 'Cloning and analyzing the repository - this can take a few minutes…',
+}
+
+// Which metric tile's count backs each findings category, so an empty panel
+// can tell "nothing found" apart from "this scan predates findings".
+const CATEGORY_METRIC = {
+  bug: (result) => result.metrics?.bugs,
+  vulnerability: (result) => result.metrics?.vulnerabilities,
+  codeSmell: (result) => result.metrics?.codeSmells,
+  infra: (result) => result.infrastructure?.findings?.length,
+  // Duplication's tile is a percentage, not a count of anything, so there's
+  // no expected number of findings to reconcile against.
+  duplication: () => 0,
 }
 
 // Infrastructure is conditional: it only appears for repos that actually
@@ -35,6 +48,10 @@ function CodebaseDashboard() {
   // banner below can distinguish "this is the scan I just ran" from
   // "you're looking at an older one".
   const [viewedScan, setViewedScan] = useState(null)
+  // Which metric tile's detail panel is open, and which file a "view in
+  // context" jump asked the destination tab to mark.
+  const [openCategory, setOpenCategory] = useState(null)
+  const [highlightFile, setHighlightFile] = useState(null)
 
   // Tracks the in-flight poll loop so a new scan (or unmount) can cancel a
   // previous one instead of letting it keep updating state in the background.
@@ -93,6 +110,8 @@ function CodebaseDashboard() {
     setResult(null)
     setViewedScan(null)
     setActiveTab('overview')
+    setOpenCategory(null)
+    setHighlightFile(null)
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/scan`, {
@@ -130,10 +149,42 @@ function CodebaseDashboard() {
       setViewedScan({ completedAt: body.completedAt, branch: body.branch, commitSha: body.commitSha })
       setStatus('success')
       setActiveTab('overview')
+      setOpenCategory(null)
+      setHighlightFile(null)
     } catch (err) {
       setError(err.message || 'Could not load that scan.')
       setStatus('error')
     }
+  }
+
+  /**
+   * A finding is only worth offering a jump to if the destination view can
+   * actually show it: an npm advisory has no file at all, and jscpd finds
+   * duplication in files ESLint never flagged, so those never reach the
+   * Hotspots table. Offering a button that lands on nothing is worse than
+   * not offering one.
+   *
+   * @param {object} finding
+   */
+  function canViewInContext(finding) {
+    if (!finding.file) return false
+    if (finding.category === 'infra') return result?.infrastructure?.detected === true
+    return (result?.files ?? []).some((file) => file.name === finding.file)
+  }
+
+  /** @param {object} finding */
+  function handleViewInContext(finding) {
+    setActiveTab(finding.category === 'infra' ? 'infrastructure' : 'hotspots')
+    setHighlightFile(finding.file)
+    setOpenCategory(null)
+  }
+
+  /** @param {string} tabId */
+  function handleSelectTab(tabId) {
+    setActiveTab(tabId)
+    // A highlight is the tail end of one "view in context" jump; navigating
+    // by hand starts something else, so it shouldn't stay pinned.
+    setHighlightFile(null)
   }
 
   const isBusy = status === 'queued' || status === 'running'
@@ -207,7 +258,7 @@ function CodebaseDashboard() {
                 key={tab.id}
                 type="button"
                 className={`tab-button ${currentTab === tab.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleSelectTab(tab.id)}
                 aria-current={currentTab === tab.id}
               >
                 {tab.label}
@@ -215,15 +266,28 @@ function CodebaseDashboard() {
             ))}
           </nav>
 
-          {currentTab === 'overview' && <OverviewTab result={result} />}
+          {currentTab === 'overview' && <OverviewTab result={result} onSelectCategory={setOpenCategory} />}
           {currentTab === 'dependency-map' && <DependencyMapTab dependencyGraph={result.dependencyGraph} />}
-          {currentTab === 'hotspots' && <HotspotsTab files={result.files} />}
+          {currentTab === 'hotspots' && <HotspotsTab files={result.files} highlightFile={highlightFile} />}
           {currentTab === 'infrastructure' && (
-            <InfrastructureTab infrastructure={result.infrastructure} warnings={result.warnings} />
+            <InfrastructureTab
+              infrastructure={result.infrastructure}
+              warnings={result.warnings}
+              highlightFile={highlightFile}
+            />
           )}
           {currentTab === 'history' && (
             <HistoryTab apiBaseUrl={API_BASE_URL} repoUrl={repoUrl.trim()} onViewScan={handleViewScan} />
           )}
+
+          <FindingsPanel
+            category={openCategory}
+            findings={result.findings}
+            expectedCount={openCategory ? CATEGORY_METRIC[openCategory]?.(result) : undefined}
+            canViewInContext={canViewInContext}
+            onViewInContext={handleViewInContext}
+            onClose={() => setOpenCategory(null)}
+          />
         </div>
       )}
     </div>

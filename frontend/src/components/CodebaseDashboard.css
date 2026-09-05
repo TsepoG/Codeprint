@@ -260,6 +260,26 @@
   border-radius: 2px;
 }
 
+/* A tile that opens a detail panel. Reset the button defaults rather than
+   restyling, so it keeps the exact tile look and only gains the affordance. */
+.stat-tile-button {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.stat-tile-button:hover {
+  border-color: var(--bp-line-strong);
+  background: var(--bp-surface-raised);
+}
+
+.stat-tile-button:focus-visible {
+  outline: 2px solid var(--bp-cyan);
+  outline-offset: 2px;
+}
+
 /* Opt-in: only tiles whose number carries a severity judgement get the
    coloured edge (see StatTile's `severity` prop). */
 .stat-tile-good {
@@ -635,6 +655,277 @@
 
 .trend-chart-current {
   font-weight: 600;
+}
+
+/* A row the user was sent to by "view in context" - marked with the amber
+   accent used for callouts elsewhere, and briefly flashed so the jump is
+   visible even when the row was already on screen. */
+.row-highlighted td {
+  background: var(--bp-accent-bg);
+}
+
+/* The marker rule belongs to the row, so it goes on the first cell only -
+   on every td it reads as a border between columns instead. */
+.row-highlighted td:first-child {
+  box-shadow: inset 3px 0 0 var(--bp-accent);
+}
+
+@keyframes dashboard-row-flash {
+  from { background: rgba(255, 180, 84, 0.32); }
+  to { background: var(--bp-accent-bg); }
+}
+
+.row-highlighted td {
+  animation: dashboard-row-flash 900ms ease-out;
+}
+
+/*
+ * Findings detail panel: a spec sheet pinned over the drawing rather than a
+ * generic modal - it keeps the sheet edge (a solid accent rule down the
+ * binding side), a stencilled title block, and the corner brackets used by
+ * every other panel, and slides in from the right like a sheet pulled from
+ * the set.
+ */
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 12, 24, 0.6);
+  z-index: 10;
+}
+
+.findings-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100vw);
+  height: 100svh;
+  box-sizing: border-box;
+  padding: 20px 22px 24px;
+  color: var(--bp-ink);
+  background: var(--bp-bg);
+  background-image:
+    linear-gradient(var(--bp-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bp-grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+  border-left: 3px solid var(--bp-accent);
+  box-shadow: -18px 0 40px rgba(4, 12, 24, 0.55);
+  animation: dashboard-panel-in 180ms ease-out;
+}
+
+@keyframes dashboard-panel-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .findings-panel,
+  .row-highlighted td {
+    animation: none;
+  }
+}
+
+.findings-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--bp-line);
+}
+
+.findings-panel-titleblock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.findings-panel-tag {
+  font-family: var(--bp-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--bp-accent);
+}
+
+.findings-panel-head h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.findings-panel-count {
+  margin: 0;
+  font-family: var(--bp-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bp-ink-dim);
+}
+
+.findings-panel-close {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--bp-ink-dim);
+  background: none;
+  border: 1px solid var(--bp-line);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.findings-panel-close:hover {
+  color: var(--bp-ink);
+  border-color: var(--bp-line-strong);
+}
+
+.findings-panel-close:focus-visible {
+  outline: 2px solid var(--bp-cyan);
+  outline-offset: 2px;
+}
+
+.findings-panel-blurb {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--bp-ink-dim);
+}
+
+.findings-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 12px;
+}
+
+.findings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finding-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--bp-grid);
+}
+
+.finding-row:last-child {
+  border-bottom: none;
+}
+
+.finding-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.finding-description {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.finding-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  font-family: var(--bp-mono);
+  font-size: 12px;
+  color: var(--bp-ink-dim);
+}
+
+.finding-location {
+  color: var(--bp-cyan);
+}
+
+.finding-location.dim {
+  color: var(--bp-ink-dim);
+  font-style: italic;
+}
+
+.finding-rule::before,
+.finding-source::before {
+  content: '· ';
+}
+
+.finding-snippet {
+  margin-top: 8px;
+}
+
+.finding-snippet summary {
+  font-family: var(--bp-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bp-ink-dim);
+  cursor: pointer;
+}
+
+.finding-snippet summary:hover {
+  color: var(--bp-ink);
+}
+
+.snippet-block {
+  margin-top: 8px;
+}
+
+.snippet-caption {
+  margin: 0 0 4px;
+  font-family: var(--bp-mono);
+  font-size: 11px;
+  color: var(--bp-ink-dim);
+}
+
+.snippet-code {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--bp-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--bp-ink);
+  background: var(--bp-surface);
+  border: 1px solid var(--bp-line);
+  border-radius: 2px;
+}
+
+/* The app shell styles every `code` as an inline-flex chip on a pale
+   background (see index.css) - which turns the lines of a code block into
+   flex items on a single row. Undo all of it inside the snippet. */
+.snippet-code code {
+  display: block;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* One line per row, rather than relying on newline text nodes surviving
+   whatever `white-space` is in effect. `min-height` keeps a blank line in
+   the source from collapsing to nothing and misaligning the numbering. */
+.snippet-line {
+  display: block;
+  min-height: 1.5em;
+}
+
+.snippet-line-number {
+  display: inline-block;
+  width: 3.5ch;
+  margin-right: 12px;
+  text-align: right;
+  color: var(--bp-ink-dim);
+  user-select: none;
+}
+
+.finding-row .link-button {
+  margin-top: 10px;
 }
 
 @media (max-width: 640px) {
