@@ -143,7 +143,15 @@ export function FilesTable({ files, emptyMessage, highlightFile }) {
   )
 }
 
-export function DependencyGraph({ nodes, edges }) {
+/**
+ * @param {object} props
+ * @param {{id: string}[]} props.nodes
+ * @param {{from: string, to: string}[]} props.edges
+ * @param {(id: string) => void} [props.onSelectNode] Makes each node a
+ *   button. Without it the diagram stays a plain figure.
+ * @param {string|null} [props.selectedNode]
+ */
+export function DependencyGraph({ nodes, edges, onSelectNode, selectedNode }) {
   if (nodes.length === 0) {
     return <p className="empty-note">No dependency graph available for this repo.</p>
   }
@@ -194,8 +202,38 @@ export function DependencyGraph({ nodes, edges }) {
       })}
       {nodes.map((node) => {
         const pos = positions.get(node.id)
+        const selected = node.id === selectedNode
+        const className = `graph-node${selected ? ' selected' : ''}${onSelectNode ? ' clickable' : ''}`
+
+        if (!onSelectNode) {
+          return (
+            <g key={node.id} className={className}>
+              <circle cx={pos.x} cy={pos.y} r="5">
+                <title>{node.id}</title>
+              </circle>
+            </g>
+          )
+        }
+
         return (
-          <g key={node.id} className="graph-node">
+          <g
+            key={node.id}
+            className={className}
+            role="button"
+            tabIndex={0}
+            aria-label={`${node.id} - view module`}
+            onClick={() => onSelectNode(node.id)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              // Space would otherwise scroll the page out from under the
+              // diagram, which SVG gives no default activation behaviour for.
+              event.preventDefault()
+              onSelectNode(node.id)
+            }}
+          >
+            {/* A 5px dot is far too small to hit; this transparent disc is
+                the real target and keeps the drawn node visually light. */}
+            <circle cx={pos.x} cy={pos.y} r="14" className="graph-node-target" />
             <circle cx={pos.x} cy={pos.y} r="5">
               <title>{node.id}</title>
             </circle>
