@@ -8,6 +8,7 @@ const SCAN_RESULT = {
     { name: 'a.js', complexity: 4, coverage: null, severity: 'medium' },
     { name: 'b.js', complexity: 8, coverage: null, severity: 'high' },
   ],
+  findings: [],
   dependencyGraph: { nodes: [], edges: [] },
   warnings: [],
 };
@@ -137,6 +138,60 @@ test('listScans summaries include metrics and avgComplexity, without the full fi
   assert.deepEqual(scans[0].metrics, SCAN_RESULT.metrics);
   assert.equal(scans[0].avgComplexity, 6); // mean of 4 and 8
   assert.equal(scans[0].files, undefined);
+});
+
+test('findings round-trip through their own table, in their original order', () => {
+  const findings = [
+    {
+      id: 'f1', category: 'bug', source: 'eslint', file: 'a.js', line: 3, endLine: 3,
+      severity: 'high', ruleId: 'no-undef', description: "'x' is not defined.",
+      snippet: { startLine: 1, text: 'const y = 1;\nconst z = 2;\nx();' },
+    },
+    {
+      id: 'f2', category: 'vulnerability', source: 'npm-audit', file: null, line: null, endLine: null,
+      severity: 'medium', ruleId: 'GHSA-xxxx', description: 'some-pkg is vulnerable', snippet: null,
+    },
+    {
+      id: 'f3', category: 'duplication', source: 'jscpd', file: 'b.js', line: 10, endLine: 20,
+      severity: 'low', ruleId: 'duplicate-code', description: '11 duplicated lines, also at c.js:5',
+      snippet: { startLine: 7, text: 'dup block' },
+      duplicateOf: { file: 'c.js', line: 5, endLine: 15, snippet: { startLine: 2, text: 'dup block' } },
+    },
+    {
+      id: 'f4', category: 'infra', source: 'checkov', file: 'main.tf', line: 1, endLine: 1,
+      severity: 'high', ruleId: 'CKV_AWS_18', description: 'no logging', snippet: null,
+      resource: 'aws_s3_bucket.data',
+    },
+  ];
+
+  insertScan({
+    id: 'scan-findings',
+    repoUrl: 'https://github.com/owner/repo',
+    branch: 'main',
+    commitSha: 'abc123',
+    startedAt: 1000,
+    completedAt: 2000,
+    status: 'complete',
+    result: { ...SCAN_RESULT, findings },
+  });
+
+  const scan = getScanById('scan-findings');
+  assert.deepEqual(scan.result.findings, findings);
+});
+
+test('a scan with no findings round-trips with an empty findings array', () => {
+  insertScan({
+    id: 'scan-no-findings',
+    repoUrl: 'https://github.com/owner/repo',
+    branch: 'main',
+    commitSha: 'abc123',
+    startedAt: 1000,
+    completedAt: 2000,
+    status: 'complete',
+    result: SCAN_RESULT,
+  });
+
+  assert.deepEqual(getScanById('scan-no-findings').result.findings, []);
 });
 
 test('listScans reports a null avgComplexity for a failed scan', () => {

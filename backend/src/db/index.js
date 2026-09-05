@@ -21,6 +21,29 @@ db.exec(`
     resultJson TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_scans_repoUrl_completedAt ON scans (repoUrl, completedAt DESC);
+
+  -- One row per individual finding (see services/scan/findings.js), rather
+  -- than only inside the scan's resultJson blob: these are the rows a future
+  -- "every high-severity finding across all scans of this repo" query needs,
+  -- and keeping them addressable is the whole point of extracting them.
+  -- The scalar columns are the queryable ones; detailJson carries the parts
+  -- that aren't (the code snippet, a duplication's other location, an infra
+  -- finding's resource address).
+  CREATE TABLE IF NOT EXISTS scan_findings (
+    scanId TEXT NOT NULL REFERENCES scans(id),
+    seq INTEGER NOT NULL,
+    findingId TEXT NOT NULL,
+    category TEXT NOT NULL,
+    source TEXT NOT NULL,
+    file TEXT,
+    line INTEGER,
+    endLine INTEGER,
+    severity TEXT NOT NULL,
+    ruleId TEXT,
+    description TEXT,
+    detailJson TEXT,
+    PRIMARY KEY (scanId, seq)
+  );
 `);
 
 // Added after the `scans` table already shipped, so existing databases need
@@ -46,32 +69,110 @@ if (!existingColumns.has('narrativeGapAnalysis')) {
  */
 
 /**
- * Persists a finished (complete or failed) scan. If `result.narrative`
- * (see `services/scan/synthesis.js`) is present, it's also broken out into
- * its own columns - `narrativeSummary`/`narrativeGapAnalysis` - rather than
- * only living inside `resultJson`; `getScanById`/`toSummary` merge it back
- * onto `result.narrative` when reading, so callers never see the
- * difference between a live job's result and a persisted one.
+ * `result` minus its `findings` array, which is stored in `scan_findings`
+ * instead - keeping it out of `resultJson` too means there's exactly one
+ * copy of each finding, not one in the blob and one in its own row.
+ *
+ * @param {unknown} result
+ * @returns {unknown}
+ */
+function withoutFindings(result) {
+  if (!result || !Array.isArray(result.findings)) return result ?? null;
+  const rest = { ...result };
+  delete rest.findings;
+  return rest;
+}
+
+const insertScanRow = db.prepare(
+  `INSERT INTO scans (id, repoUrl, branch, commitSha, startedAt, completedAt, status, resultJson, narrativeSummary, narrativeGapAnalysis)
+   VALUES (@id, @repoUrl, @branch, @commitSha, @startedAt, @completedAt, @status, @resultJson, @narrativeSummary, @narrativeGapAnalysis)`,
+);
+
+const insertFindingRow = db.prepare(
+  `INSERT INTO scan_findings (scanId, seq, findingId, category, source, file, line, endLine, severity, ruleId, description, detailJson)
+   VALUES (@scanId, @seq, @findingId, @category, @source, @file, @line, @endLine, @severity, @ruleId, @description, @detailJson)`,
+);
+
+/**
+ * Persists a finished (complete or failed) scan and its findings as one
+ * atomic write - a scan row is never left behind without the findings that
+ * belong to it.
+ *
+ * Two parts of the result are stored outside `resultJson` rather than only
+ * inside it: `result.narrative` (see `services/scan/synthesis.js`) in its own
+ * columns, and `result.findings` (see `services/scan/findings.js`) as rows in
+ * `scan_findings`. Both are stripped from the JSON blob so there's exactly
+ * one copy of each, and `getScanById` merges them back on, so callers never
+ * see the difference between a live job's result and a persisted one.
  *
  * @param {Omit<ScanRecord, 'result'> & {result: unknown}} record
  * @returns {void}
  */
-export function insertScan({ id, repoUrl, branch, commitSha, startedAt, completedAt, status, result }) {
-  const narrative = result?.narrative ?? null;
-  db.prepare(
-    `INSERT INTO scans (id, repoUrl, branch, commitSha, startedAt, completedAt, status, resultJson, narrativeSummary, narrativeGapAnalysis)
-     VALUES (@id, @repoUrl, @branch, @commitSha, @startedAt, @completedAt, @status, @resultJson, @narrativeSummary, @narrativeGapAnalysis)`,
-  ).run({
-    id,
-    repoUrl,
-    branch: branch ?? null,
-    commitSha: commitSha ?? null,
-    startedAt,
-    completedAt,
-    status,
-    resultJson: result ? JSON.stringify(result) : null,
-    narrativeSummary: narrative?.summary ?? null,
-    narrativeGapAnalysis: narrative ? JSON.stringify(narrative.gapAnalysis) : null,
+export const insertScan = db.transaction(
+  ({ id, repoUrl, branch, commitSha, startedAt, completedAt, status, result }) => {
+    const narrative = result?.narrative ?? null;
+    const findings = Array.isArray(result?.findings) ? result.findings : [];
+    const resultWithoutFindings = withoutFindings(result);
+
+    insertScanRow.run({
+      id,
+      repoUrl,
+      branch: branch ?? null,
+      commitSha: commitSha ?? null,
+      startedAt,
+      completedAt,
+      status,
+      resultJson: resultWithoutFindings ? JSON.stringify(resultWithoutFindings) : null,
+      narrativeSummary: narrative?.summary ?? null,
+      narrativeGapAnalysis: narrative ? JSON.stringify(narrative.gapAnalysis) : null,
+    });
+
+    findings.forEach((finding, seq) => {
+      insertFindingRow.run({
+        scanId: id,
+        seq,
+        findingId: finding.id ?? null,
+        category: finding.category,
+        source: finding.source,
+        file: finding.file ?? null,
+        line: finding.line ?? null,
+        endLine: finding.endLine ?? null,
+        severity: finding.severity,
+        ruleId: finding.ruleId ?? null,
+        description: finding.description ?? null,
+        detailJson: JSON.stringify({
+          snippet: finding.snippet ?? null,
+          ...(finding.duplicateOf ? { duplicateOf: finding.duplicateOf } : {}),
+          ...(finding.resource !== undefined ? { resource: finding.resource } : {}),
+        }),
+      });
+    });
+  },
+);
+
+/**
+ * @param {string} scanId
+ * @returns {import('../services/scan/findings.js').Finding[]}
+ */
+function findingsFor(scanId) {
+  const rows = db.prepare('SELECT * FROM scan_findings WHERE scanId = ? ORDER BY seq').all(scanId);
+
+  return rows.map((row) => {
+    const detail = row.detailJson ? JSON.parse(row.detailJson) : {};
+    return {
+      id: row.findingId,
+      category: row.category,
+      source: row.source,
+      file: row.file,
+      line: row.line,
+      endLine: row.endLine,
+      severity: row.severity,
+      ruleId: row.ruleId,
+      description: row.description,
+      snippet: detail.snippet ?? null,
+      ...(detail.duplicateOf ? { duplicateOf: detail.duplicateOf } : {}),
+      ...(detail.resource !== undefined ? { resource: detail.resource } : {}),
+    };
   });
 }
 
@@ -132,7 +233,9 @@ export function getScanById(id) {
   const row = db.prepare('SELECT * FROM scans WHERE id = ?').get(id);
   if (!row) return null;
 
-  const result = row.resultJson ? JSON.parse(row.resultJson) : null;
+  const stored = row.resultJson ? JSON.parse(row.resultJson) : null;
+  const result = stored ? { ...withNarrative(row, stored), findings: findingsFor(row.id) } : null;
+
   return {
     id: row.id,
     repoUrl: row.repoUrl,
@@ -141,7 +244,7 @@ export function getScanById(id) {
     startedAt: row.startedAt,
     completedAt: row.completedAt,
     status: row.status,
-    result: withNarrative(row, result),
+    result,
   };
 }
 

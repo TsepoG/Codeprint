@@ -103,9 +103,9 @@ router.post('/scan', scanLimiter, (req, res) => {
  *
  * Responses: `{ status: 'queued'|'running' }` while in progress,
  * `{ status: 'complete', result }` once done (`result` is the
- * `{ metrics, files, dependencyGraph, warnings }` shape from
- * `services/scan/normalize.js`), `{ status: 'failed', error }` if the
- * scan failed, all with HTTP 200; 404 if the job id is unknown/expired.
+ * `{ metrics, files, findings, dependencyGraph, infrastructure, warnings }`
+ * shape from `services/scan/normalize.js`), `{ status: 'failed', error }` if
+ * the scan failed, all with HTTP 200; 404 if the job id is unknown/expired.
  */
 router.get('/scan/:jobId', (req, res) => {
   const job = getJob(req.params.jobId);

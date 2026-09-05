@@ -5,5 +5,45 @@
       "lines": 1200,
       "duplicatedLines": 102
     }
-  }
+  },
+  "duplicates": [
+    {
+      "format": "javascript",
+      "lines": 42,
+      "tokens": 210,
+      "firstFile": {
+        "name": "src/handlers/create.js",
+        "start": 10,
+        "end": 51,
+        "startLoc": { "line": 10, "column": 1 },
+        "endLoc": { "line": 51, "column": 2 }
+      },
+      "secondFile": {
+        "name": "src/handlers/update.js",
+        "start": 8,
+        "end": 49,
+        "startLoc": { "line": 8, "column": 1 },
+        "endLoc": { "line": 49, "column": 2 }
+      }
+    },
+    {
+      "format": "javascript",
+      "lines": 12,
+      "tokens": 60,
+      "firstFile": {
+        "name": "src/utils/format.js",
+        "start": 3,
+        "end": 14,
+        "startLoc": { "line": 3, "column": 1 },
+        "endLoc": { "line": 14, "column": 2 }
+      },
+      "secondFile": {
+        "name": "src/utils/parse.js",
+        "start": 20,
+        "end": 31,
+        "startLoc": { "line": 20, "column": 1 },
+        "endLoc": { "line": 31, "column": 2 }
+      }
+    }
+  ]
 }
