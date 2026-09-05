@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import InfrastructureTab from '../../../src/components/dashboard/InfrastructureTab.jsx'
 
@@ -23,9 +23,12 @@ const FINDINGS = [
   },
 ]
 
+// inframap namespaces its nodes by the Terraform directory it was run on,
+// which is the directory the findings above name too - the two identify the
+// same resource, and have to agree for a graph selection to match a finding.
 const GRAPH = {
-  nodes: [{ id: 'aws_s3_bucket.assets' }, { id: 'aws_instance.app' }, { id: 'aws_security_group.web' }],
-  edges: [{ from: 'aws_instance.app', to: 'aws_security_group.web' }],
+  nodes: [{ id: 'infra/aws_s3_bucket.assets' }, { id: 'infra/aws_instance.app' }, { id: 'infra/aws_security_group.web' }],
+  edges: [{ from: 'infra/aws_instance.app', to: 'infra/aws_security_group.web' }],
 }
 
 const DETECTED = { detected: true, findings: FINDINGS, graph: GRAPH }
@@ -156,5 +159,80 @@ describe('InfrastructureTab', () => {
 
     expect(screen.getByText(/showing 100 of 150/i)).toBeInTheDocument()
     expect(screen.getAllByRole('row')).toHaveLength(101) // 100 findings + header
+  })
+
+  describe('resource detail panel', () => {
+    it('shows no panel until a resource is chosen', () => {
+      render(<InfrastructureTab infrastructure={DETECTED} />)
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('opens from a graph node', () => {
+      render(<InfrastructureTab infrastructure={DETECTED} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'infra/aws_s3_bucket.assets - view resource' }))
+
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByRole('heading', { name: 'aws_s3_bucket.assets' })).toBeInTheDocument()
+    })
+
+    it('opens from a findings-table row', () => {
+      render(<InfrastructureTab infrastructure={DETECTED} />)
+
+      const table = screen.getByRole('table')
+      fireEvent.click(within(table).getByRole('button', { name: 'aws_security_group.web' }))
+
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByRole('heading', { name: 'aws_security_group.web' })).toBeInTheDocument()
+    })
+
+    it('opens from the keyboard on a graph node', () => {
+      render(<InfrastructureTab infrastructure={DETECTED} />)
+
+      fireEvent.keyDown(screen.getByRole('button', { name: 'infra/aws_s3_bucket.assets - view resource' }), { key: 'Enter' })
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    it('shows that resource’s findings only', () => {
+      render(<InfrastructureTab infrastructure={DETECTED} />)
+
+      const table = screen.getByRole('table')
+      fireEvent.click(within(table).getByRole('button', { name: 'aws_security_group.web' }))
+
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByText(/allows ingress from public internet/i)).toBeInTheDocument()
+      expect(within(dialog).queryByText(/access logging/i)).not.toBeInTheDocument()
+    })
+
+    it('marks the matching graph node when the selection came from the table', () => {
+      const { container } = render(<InfrastructureTab infrastructure={DETECTED} />)
+
+      const table = screen.getByRole('table')
+      fireEvent.click(within(table).getByRole('button', { name: 'aws_s3_bucket.assets' }))
+
+      const selected = container.querySelectorAll('.infra-node.selected')
+      expect(selected).toHaveLength(1)
+      expect(selected[0]).toHaveAttribute('aria-label', 'infra/aws_s3_bucket.assets - view resource')
+    })
+
+    it('opens on a graphed resource that no tool flagged', () => {
+      render(<InfrastructureTab infrastructure={DETECTED} />)
+
+      // aws_instance.app is in the graph but has no findings.
+      fireEvent.click(screen.getByRole('button', { name: 'infra/aws_instance.app - view resource' }))
+
+      expect(screen.getByText(/neither checkov nor tfsec flagged this resource/i)).toBeInTheDocument()
+    })
+
+    it('closes again, leaving the tab in place', () => {
+      render(<InfrastructureTab infrastructure={DETECTED} />)
+      fireEvent.click(screen.getByRole('button', { name: 'infra/aws_s3_bucket.assets - view resource' }))
+
+      fireEvent.click(screen.getByRole('button', { name: /close detail panel/i }))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(screen.getByRole('table')).toBeInTheDocument()
+    })
   })
 })

@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import ModuleDetailPanel from '../../../src/components/dashboard/ModuleDetailPanel.jsx'
+import FileDetailPanel from '../../../src/components/dashboard/FileDetailPanel.jsx'
 import { buildDependencyModel } from '../../../src/components/dashboard/dependencyModel.js'
 
 const NODES = [
@@ -42,7 +42,7 @@ const FINDINGS = [
 function renderPanel(props = {}) {
   const { nodes = NODES, edges = EDGES, ...rest } = props
   return render(
-    <ModuleDetailPanel
+    <FileDetailPanel
       moduleId="src/handlers/create.js"
       model={buildDependencyModel(nodes, edges)}
       files={FILES}
@@ -54,7 +54,7 @@ function renderPanel(props = {}) {
   )
 }
 
-describe('ModuleDetailPanel', () => {
+describe('FileDetailPanel', () => {
   it('renders nothing when no module is selected', () => {
     const { container } = renderPanel({ moduleId: null })
     expect(container).toBeEmptyDOMElement()

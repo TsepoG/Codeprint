@@ -140,11 +140,7 @@ export const insertScan = db.transaction(
         severity: finding.severity,
         ruleId: finding.ruleId ?? null,
         description: finding.description ?? null,
-        detailJson: JSON.stringify({
-          snippet: finding.snippet ?? null,
-          ...(finding.duplicateOf ? { duplicateOf: finding.duplicateOf } : {}),
-          ...(finding.resource !== undefined ? { resource: finding.resource } : {}),
-        }),
+        detailJson: JSON.stringify(detailOf(finding)),
       });
     });
   },
@@ -170,10 +166,48 @@ function findingsFor(scanId) {
       ruleId: row.ruleId,
       description: row.description,
       snippet: detail.snippet ?? null,
-      ...(detail.duplicateOf ? { duplicateOf: detail.duplicateOf } : {}),
-      ...(detail.resource !== undefined ? { resource: detail.resource } : {}),
+      ...detailExtras(detail),
     };
   });
+}
+
+// The scalar columns above; everything else on a finding rides in detailJson.
+const FINDING_COLUMNS = new Set([
+  'id', 'category', 'source', 'file', 'line', 'endLine', 'severity', 'ruleId', 'description', 'snippet',
+]);
+
+/**
+ * A finding's non-column fields - `duplicateOf` for a clone pair, an infra
+ * finding's `resource`/`remediation`/`impact`/`link`, and whatever a later
+ * tool adds. Kept as a sweep rather than a list of known keys so a new field
+ * survives persistence without having to be remembered in two more places.
+ *
+ * @param {object} finding
+ * @returns {object}
+ */
+function detailOf(finding) {
+  const detail = { snippet: finding.snippet ?? null };
+  for (const [key, value] of Object.entries(finding)) {
+    if (FINDING_COLUMNS.has(key) || value === undefined) continue;
+    detail[key] = value;
+  }
+  return detail;
+}
+
+/**
+ * The inverse of {@link detailOf}: everything a stored detail blob carries
+ * apart from the snippet, which `findingsFor` places itself.
+ *
+ * @param {object} detail
+ * @returns {object}
+ */
+function detailExtras(detail) {
+  const extras = {};
+  for (const [key, value] of Object.entries(detail)) {
+    if (key === 'snippet') continue;
+    extras[key] = value;
+  }
+  return extras;
 }
 
 /**

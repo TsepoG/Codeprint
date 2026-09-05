@@ -700,7 +700,10 @@
   z-index: 11;
   display: flex;
   flex-direction: column;
-  width: min(520px, 100vw);
+  /* Wide enough to read a duplication pair as two columns without either
+     side truncating mid-line, which is the whole point of showing them
+     together (see .snippet-pair). */
+  width: min(620px, 100vw);
   height: 100svh;
   box-sizing: border-box;
   padding: 20px 22px 24px;
@@ -1088,6 +1091,124 @@
   display: inline;
   width: auto;
   padding: 0;
+}
+
+/* A file/resource name in a table that opens its detail panel. Kept looking
+   like the text it replaces, so the table doesn't turn into a wall of
+   buttons - the affordance shows on hover and focus. */
+.file-name-button {
+  font: inherit;
+  font-family: var(--bp-mono);
+  font-size: 13px;
+  padding: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+  color: var(--bp-cyan);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.file-name-button:hover {
+  color: var(--bp-ink);
+  text-decoration: underline;
+}
+
+.file-name-button:focus-visible {
+  outline: 2px solid var(--bp-cyan);
+  outline-offset: 2px;
+}
+
+/* Clickable infrastructure resources. */
+.infra-node.clickable {
+  cursor: pointer;
+}
+
+.infra-node.clickable:hover rect,
+.infra-node.selected rect {
+  stroke: var(--bp-accent);
+  fill: var(--bp-accent-bg);
+}
+
+.infra-node.clickable:focus {
+  outline: none;
+}
+
+.infra-node.clickable:focus-visible rect {
+  stroke: var(--bp-cyan);
+  stroke-width: 2;
+}
+
+/* Duplication: the two matched blocks, side by side. Reading one above the
+   other makes the eye diff from memory - the whole point is seeing them at
+   once. Stacks below the panel's comfortable two-column width. */
+.snippet-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .snippet-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Infrastructure finding detail. */
+.infra-finding-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.infra-finding-card {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--bp-grid);
+}
+
+.infra-finding-card:last-child {
+  border-bottom: none;
+}
+
+.infra-both-sources {
+  margin-bottom: 10px;
+}
+
+.infra-guidance {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--bp-cyan);
+  background: var(--bp-surface);
+}
+
+.infra-guidance-line {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.infra-guidance-line:last-child {
+  margin-bottom: 0;
+}
+
+.infra-guidance-label {
+  display: inline-block;
+  margin-right: 8px;
+  font-family: var(--bp-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bp-ink-dim);
+}
+
+.infra-guidance-link {
+  color: var(--bp-cyan);
+  overflow-wrap: anywhere;
+}
+
+.infra-no-guidance {
+  margin-top: 10px;
+  font-size: 13px;
 }
 
 @media (max-width: 640px) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './CodebaseDashboard.css'
 import OverviewTab from './dashboard/OverviewTab.jsx'
 import DependencyMapTab from './dashboard/DependencyMapTab.jsx'
@@ -6,6 +6,7 @@ import HotspotsTab from './dashboard/HotspotsTab.jsx'
 import HistoryTab from './dashboard/HistoryTab.jsx'
 import InfrastructureTab from './dashboard/InfrastructureTab.jsx'
 import FindingsPanel from './dashboard/FindingsPanel.jsx'
+import { buildDependencyModel } from './dashboard/dependencyModel.js'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 const POLL_INTERVAL_MS = 2500
@@ -187,6 +188,13 @@ function CodebaseDashboard() {
     setHighlightFile(null)
   }
 
+  // Built once here rather than per tab: the Dependency Map and Hotspots
+  // open the same file panel, and it should say the same thing either way.
+  const dependencyModel = useMemo(
+    () => buildDependencyModel(result?.dependencyGraph?.nodes, result?.dependencyGraph?.edges),
+    [result?.dependencyGraph],
+  )
+
   const isBusy = status === 'queued' || status === 'running'
 
   const visibleTabs = result ? TABS.filter((tab) => !tab.showFor || tab.showFor(result)) : TABS
@@ -272,9 +280,17 @@ function CodebaseDashboard() {
               dependencyGraph={result.dependencyGraph}
               files={result.files}
               findings={result.findings}
+              model={dependencyModel}
             />
           )}
-          {currentTab === 'hotspots' && <HotspotsTab files={result.files} highlightFile={highlightFile} />}
+          {currentTab === 'hotspots' && (
+            <HotspotsTab
+              files={result.files}
+              highlightFile={highlightFile}
+              findings={result.findings}
+              model={dependencyModel}
+            />
+          )}
           {currentTab === 'infrastructure' && (
             <InfrastructureTab
               infrastructure={result.infrastructure}

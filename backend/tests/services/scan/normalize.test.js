@@ -324,8 +324,24 @@ test('infrastructure: maps checkov failed checks onto the unified finding shape'
     ruleId: 'CKV_AWS_18',
     severity: 'high',
     description: 'Ensure the S3 bucket has access logging enabled',
+    // checkov words no fix of its own - it links its policy docs instead.
+    remediation: null,
+    impact: null,
+    link: 'https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/s3-policies/s3-13-enable-logging',
     source: 'checkov',
   });
+});
+
+test('infrastructure: a checkov check with no guideline link degrades to null rather than undefined', () => {
+  const { infrastructure } = normalizeScanResults({
+    ...jsTools(),
+    hasTerraform: true,
+    checkovResult: checkovOk(),
+  });
+
+  // CKV_AWS_21 in the fixture carries no `guideline`.
+  const withoutLink = infrastructure.findings.find((f) => f.ruleId === 'CKV_AWS_21');
+  assert.equal(withoutLink.link, null);
 });
 
 test('infrastructure: maps tfsec results onto the unified finding shape', () => {
@@ -344,8 +360,32 @@ test('infrastructure: maps tfsec results onto the unified finding shape', () => 
     ruleId: 'aws-s3-enable-bucket-encryption', // long_id preferred over rule_id
     severity: 'high', // CRITICAL folds onto high
     description: 'Bucket does not have encryption enabled',
+    remediation: 'Configure bucket encryption',
+    impact: 'The bucket objects could be read if compromised',
+    link: null, // this fixture result carries no `links`
     source: 'tfsec',
   });
+});
+
+test('infrastructure: tfsec links are carried through, first one only', () => {
+  const report = loadFixture('tfsec-report.json');
+  const withLinks = {
+    ok: true,
+    report: {
+      results: [{
+        ...report.results[0],
+        location: { ...report.results[0].location, filename: path.join(TARGET_DIR, 'infra', 's3.tf') },
+        links: ['https://aquasecurity.github.io/tfsec/latest/checks/aws/s3/enable-bucket-encryption/', 'https://example.test/second'],
+      }],
+    },
+  };
+
+  const { infrastructure } = normalizeScanResults({ ...jsTools(), hasTerraform: true, tfsecResult: withLinks });
+
+  assert.equal(
+    infrastructure.findings[0].link,
+    'https://aquasecurity.github.io/tfsec/latest/checks/aws/s3/enable-bucket-encryption/',
+  );
 });
 
 test('infrastructure: folds both tools\' severity scales onto high/medium/low', () => {

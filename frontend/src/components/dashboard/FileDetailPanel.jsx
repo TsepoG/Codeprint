@@ -84,34 +84,45 @@ function ModuleList({ title, modules, emptyMessage, onSelect }) {
 }
 
 /**
- * Everything the scan knows about one module in the dependency graph: its
- * quick-reference numbers, whether it sits in an import cycle, what it's
- * wired to in both directions, and the findings recorded against it.
+ * Everything the scan knows about one file: its quick-reference numbers,
+ * whether it sits in an import cycle, what it's wired to in both directions,
+ * and the findings recorded against it.
+ *
+ * Shared by the Dependency Map (where a file is a graph node) and Hotspots
+ * (where it's a table row) - the same file, reached two ways.
  *
  * @param {object} props
- * @param {string|null} props.moduleId Which module to show; null closes the panel.
- * @param {import('./dependencyModel.js').DependencyModel} props.model
+ * @param {string|null} props.moduleId Which file to show; null closes the panel.
+ * @param {import('./dependencyModel.js').DependencyModel} [props.model] The
+ *   import graph. Omitted - or asked about a file the graph doesn't contain -
+ *   the dependency sections are left out rather than claiming zero imports.
  * @param {object[]} [props.files] The scan's `files` array, for the stats row.
  * @param {object[]} [props.findings] The scan's whole `findings` array.
- * @param {(id: string) => void} props.onSelectModule Re-aims the panel at another module.
+ * @param {(id: string) => void} [props.onSelectModule] Re-aims the panel at another file.
  * @param {() => void} props.onClose
  */
-function ModuleDetailPanel({ moduleId, model, files = [], findings = [], onSelectModule, onClose }) {
+function FileDetailPanel({ moduleId, model, files = [], findings = [], onSelectModule, onClose }) {
   if (!moduleId) return null
 
   const file = files.find((entry) => entry.name === moduleId)
   const moduleFindings = rankFindings(findingsForModule(findings, moduleId))
   const duplication = duplicationOf(moduleFindings)
-  const cyclePath = model.cyclePath(moduleId)
-  const dependents = model.dependents(moduleId)
-  const dependencies = model.dependencies(moduleId)
+
+  // A file Hotspots flagged isn't necessarily a node madge graphed (and vice
+  // versa); with nothing to say about its imports, saying nothing beats
+  // reporting an authoritative-looking zero.
+  const inGraph = Boolean(model?.has(moduleId))
+  const cyclePath = inGraph ? model.cyclePath(moduleId) : null
+  const dependents = inGraph ? model.dependents(moduleId) : []
+  const dependencies = inGraph ? model.dependencies(moduleId) : []
+  const selectModule = onSelectModule ?? (() => {})
 
   return (
     <DetailPanel
       open
-      tag="Module"
+      tag="File"
       title={moduleId}
-      subtitle={`${dependents.length} in · ${dependencies.length} out`}
+      subtitle={inGraph ? `${dependents.length} in · ${dependencies.length} out` : undefined}
       onClose={onClose}
     >
       {/* Ahead of everything else: a cycle is a property of the module's
@@ -128,7 +139,7 @@ function ModuleDetailPanel({ moduleId, model, files = [], findings = [], onSelec
                 {index > 0 && index === cyclePath.length - 1 ? (
                   <span className="module-cycle-node">{id}</span>
                 ) : (
-                  <button type="button" className="module-link" onClick={() => onSelectModule(id)}>
+                  <button type="button" className="module-link" onClick={() => selectModule(id)}>
                     {id}
                   </button>
                 )}
@@ -158,19 +169,23 @@ function ModuleDetailPanel({ moduleId, model, files = [], findings = [], onSelec
         />
       </section>
 
-      <ModuleList
-        title="Imported by"
-        modules={dependents}
-        emptyMessage="Nothing imports this module - it's an entry point, or unused."
-        onSelect={onSelectModule}
-      />
+      {inGraph && (
+        <>
+          <ModuleList
+            title="Imported by"
+            modules={dependents}
+            emptyMessage="Nothing imports this module - it's an entry point, or unused."
+            onSelect={selectModule}
+          />
 
-      <ModuleList
-        title="Imports"
-        modules={dependencies}
-        emptyMessage="This module imports nothing else in the repo."
-        onSelect={onSelectModule}
-      />
+          <ModuleList
+            title="Imports"
+            modules={dependencies}
+            emptyMessage="This module imports nothing else in the repo."
+            onSelect={selectModule}
+          />
+        </>
+      )}
 
       <section className="module-section">
         <h3 className="module-section-title">
@@ -191,4 +206,4 @@ function ModuleDetailPanel({ moduleId, model, files = [], findings = [], onSelec
   )
 }
 
-export default ModuleDetailPanel
+export default FileDetailPanel

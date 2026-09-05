@@ -18,7 +18,8 @@
         "resource": "aws_s3_bucket.data",
         "file_path": "/infra/s3.tf",
         "file_line_range": [12, 20],
-        "severity": "HIGH"
+        "severity": "HIGH",
+        "guideline": "https://docs.prismacloud.io/en/enterprise-edition/policy-reference/aws-policies/s3-policies/s3-13-enable-logging"
       },
       {
         "check_id": "CKV_AWS_21",
