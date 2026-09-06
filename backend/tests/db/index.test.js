@@ -10,6 +10,7 @@ const SCAN_RESULT = {
   ],
   findings: [],
   findingsVersion: 1,
+  healthScore: 92,
   dependencyGraph: { nodes: [], edges: [] },
   warnings: [],
 };
@@ -33,6 +34,22 @@ test('insertScan + getScanById round-trips a complete scan', () => {
   assert.equal(scan.commitSha, 'abc123');
   assert.equal(scan.status, 'complete');
   assert.deepEqual(scan.result, { ...SCAN_RESULT, findingsAvailable: true });
+});
+
+test('a scan predating health-score capture (no healthScore) reports it as null, not 0', () => {
+  const { healthScore, ...legacyResult } = SCAN_RESULT;
+  insertScan({
+    id: 'scan-no-health-score',
+    repoUrl: 'https://github.com/owner/repo',
+    branch: 'main',
+    commitSha: 'abc123',
+    startedAt: 1000,
+    completedAt: 2000,
+    status: 'complete',
+    result: legacyResult,
+  });
+
+  assert.equal(getScanById('scan-no-health-score').result.healthScore, null);
 });
 
 test('insertScan stores a failed scan with a null result', () => {

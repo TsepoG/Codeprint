@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { FilesTable } from './shared.jsx'
 import FileDetailPanel from './FileDetailPanel.jsx'
-
-const SEVERITY_RANK = { high: 0, medium: 1, low: 2 }
+import { rankFiles } from './rankFiles.js'
 
 /**
  * @param {object} props
@@ -17,10 +16,7 @@ const SEVERITY_RANK = { high: 0, medium: 1, low: 2 }
 function HotspotsTab({ files, highlightFile, findings = [], findingsAvailable = true, model }) {
   const [selectedFile, setSelectedFile] = useState(null)
 
-  const ranked = [...files].sort((a, b) => {
-    const bySeverity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
-    return bySeverity !== 0 ? bySeverity : b.complexity - a.complexity
-  })
+  const ranked = rankFiles(files)
 
   return (
     <div className="dashboard-section">

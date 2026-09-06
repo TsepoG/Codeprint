@@ -32,6 +32,7 @@ const ANALYZE_OK = {
     metrics: { bugs: 1, vulnerabilities: 0, codeSmells: 0, duplicationPct: 0 },
     files: [{ name: 'src/index.js', complexity: 3, coverage: null, severity: 'low' }],
     findingsVersion: 1,
+    healthScore: 88,
     findings: [
       {
         id: 'a1b2c3d4e5f60718',

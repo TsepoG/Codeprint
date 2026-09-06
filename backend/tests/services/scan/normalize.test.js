@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeScanResults } from '../../../src/services/scan/normalize.js';
 import { FINDINGS_VERSION } from '../../../src/services/scan/findings.js';
+import { computeHealthScore } from '../../../src/services/scan/healthScore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, '__fixtures__');
@@ -683,6 +684,23 @@ test('findings: every result is stamped with the current findings schema version
   // scan predates extraction" once persisted (see db/index.js) - stamped
   // even when every tool was skipped, since extraction itself still ran.
   assert.equal(result.findingsVersion, FINDINGS_VERSION);
+});
+
+test('healthScore agrees with computeHealthScore given the same findings/duplication/files', () => {
+  const result = normalizeScanResults({
+    eslintResult: eslintOk(),
+    madgeResult: madgeOk(),
+    jscpdResult: jscpdOk(),
+    auditResult: auditOk(),
+    targetDir: TARGET_DIR,
+  });
+
+  const expected = computeHealthScore({
+    findings: result.findings,
+    duplicationPct: result.metrics.duplicationPct,
+    files: result.files,
+  });
+  assert.equal(result.healthScore, expected);
 });
 
 test('collects one warning per skipped tool, in eslint/madge/jscpd/audit order', () => {

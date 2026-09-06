@@ -1,12 +1,20 @@
-import { StatTile, DuplicationMeter } from './shared.jsx'
+import { Bug, ShieldAlert, FileCode2, Copy, Server } from 'lucide-react'
+import HudFrame from '../mission-control/HudFrame.jsx'
+import HealthDial from '../mission-control/HealthDial.jsx'
+import SevBadge from '../mission-control/SevBadge.jsx'
+import { SEV } from '../mission-control/severity.js'
 import SummaryPanel from './SummaryPanel.jsx'
+import { rankFiles } from './rankFiles.js'
+
+const MAX_HOTSPOT_ROWS = 5
+const MAX_COMPLEXITY_SCALE = 30
 
 function formatCount(value) {
   const n = Number(value) || 0
   return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n)
 }
 
-/** The worst severity present, which is what the tile's border reports. */
+/** The worst severity among a set of findings - 'low' (nominal) when there are none. */
 function worstSeverity(findings) {
   if (findings.some((finding) => finding.severity === 'high')) return 'high'
   if (findings.some((finding) => finding.severity === 'medium')) return 'medium'
@@ -14,42 +22,161 @@ function worstSeverity(findings) {
 }
 
 /**
+ * One mission-control metric chip: icon + severity dot on top, the value,
+ * then the label. Renders as a button only when `onClick` is given, the
+ * same way the tiles it replaces did - a chip that does nothing shouldn't
+ * advertise itself as pressable.
+ *
+ * @param {object} props
+ * @param {import('react').ComponentType} props.icon
+ * @param {string} props.label
+ * @param {string} props.value
+ * @param {'high'|'medium'|'low'} props.severity
+ * @param {() => void} [props.onClick]
+ */
+function Chip({ icon: Icon, label, value, severity, onClick }) {
+  const content = (
+    <>
+      <div className="mc-chip-top">
+        <Icon size={14} color="var(--ink-dim)" />
+        <span className="mc-dot" style={{ background: SEV[severity] }} />
+      </div>
+      <div className="mc-chip-val">{value}</div>
+      <div className="mc-chip-label">{label}</div>
+    </>
+  )
+
+  if (!onClick) {
+    return <div className="mc-chip">{content}</div>
+  }
+
+  return (
+    <button type="button" className="mc-chip" onClick={onClick} aria-label={`${label} - view findings`}>
+      {content}
+    </button>
+  )
+}
+
+/**
  * @param {object} props
  * @param {object} props.result
  * @param {(category: string) => void} [props.onSelectCategory] Opens the
- *   detail panel for a metric. Without it the tiles stay plain blocks, so
- *   this component still renders standalone.
+ *   detail panel for a metric. Without it the chips stay plain blocks.
  */
 function OverviewTab({ result, onSelectCategory }) {
+  const findings = result.findings ?? []
   const infrastructure = result.infrastructure
   const infraFindings = infrastructure?.findings ?? []
+  const hotspots = rankFiles(result.files ?? []).slice(0, MAX_HOTSPOT_ROWS)
 
-  /** @param {string} category @param {string} label */
-  const open = (category, label) =>
-    onSelectCategory ? { onClick: () => onSelectCategory(category), actionLabel: `${label} - view findings` } : {}
+  /** @param {string} category */
+  const severityFor = (category) => worstSeverity(findings.filter((finding) => finding.category === category))
+  /** @param {string} category */
+  const open = (category) => (onSelectCategory ? () => onSelectCategory(category) : undefined)
 
   return (
-    <div className="dashboard-section">
-      <section className="kpi-row" aria-label="Scan metrics">
-        <StatTile label="Bugs" value={formatCount(result.metrics.bugs)} {...open('bug', 'Bugs')} />
-        <StatTile
+    // `mc` brings in the mission-control theme's tokens (see
+    // mission-control/missionControl.css) that HudFrame/Chip/HealthDial/
+    // SevBadge below all read via var(--panel)/var(--cyan)/etc. - only
+    // Overview has adopted the new look so far, so this class stays scoped
+    // to this tab rather than the whole dashboard shell.
+    <div className="dashboard-section mc">
+      <HudFrame style={{ marginBottom: 18 }}>
+        <div className="mc-hero">
+          <HealthDial score={result.healthScore ?? null} />
+        </div>
+      </HudFrame>
+
+      <div className="mc-chips">
+        <Chip icon={Bug} label="Bugs" value={formatCount(result.metrics.bugs)} severity={severityFor('bug')} onClick={open('bug')} />
+        <Chip
+          icon={ShieldAlert}
           label="Vulnerabilities"
           value={formatCount(result.metrics.vulnerabilities)}
-          {...open('vulnerability', 'Vulnerabilities')}
+          severity={severityFor('vulnerability')}
+          onClick={open('vulnerability')}
         />
-        <StatTile label="Code smells" value={formatCount(result.metrics.codeSmells)} {...open('codeSmell', 'Code smells')} />
-        <DuplicationMeter pct={result.metrics.duplicationPct} {...open('duplication', 'Duplication')} />
+        <Chip
+          icon={FileCode2}
+          label="Code smells"
+          value={formatCount(result.metrics.codeSmells)}
+          severity={severityFor('codeSmell')}
+          onClick={open('codeSmell')}
+        />
+        <Chip
+          icon={Copy}
+          label="Duplication"
+          value={`${result.metrics.duplicationPct.toFixed(1)}%`}
+          severity={severityFor('duplication')}
+          onClick={open('duplication')}
+        />
         {/* Only for repos that actually have Terraform - a permanent "0" on
             every JS repo would be noise, not information. */}
         {infrastructure?.detected && (
-          <StatTile
+          <Chip
+            icon={Server}
             label="Infra findings"
             value={formatCount(infraFindings.length)}
             severity={worstSeverity(infraFindings)}
-            {...open('infra', 'Infra findings')}
+            onClick={open('infra')}
           />
         )}
-      </section>
+      </div>
+
+      <HudFrame style={{ marginBottom: 18 }}>
+        <div className="mc-panel-head">
+          <span>Top hotspot targets</span>
+        </div>
+        {hotspots.length === 0 ? (
+          <p className="empty-note" style={{ padding: '0 18px 16px' }}>
+            No hotspots - the linter found nothing to report.
+          </p>
+        ) : (
+          <table className="mc-table">
+            <thead>
+              <tr>
+                <th>Module</th>
+                <th>Complexity</th>
+                <th>Coverage</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hotspots.map((file) => (
+                <tr key={file.name}>
+                  <td className="mc-mono">{file.name}</td>
+                  <td>
+                    <span className="mc-bar">
+                      <span
+                        style={{
+                          width: `${Math.min(100, (file.complexity / MAX_COMPLEXITY_SCALE) * 100)}%`,
+                          background: SEV[file.severity],
+                        }}
+                      />
+                    </span>
+                    <span className="mc-mono">{file.complexity}</span>
+                  </td>
+                  <td>
+                    {file.coverage == null ? (
+                      <span className="mc-mono">—</span>
+                    ) : (
+                      <>
+                        <span className="mc-bar">
+                          <span style={{ width: `${file.coverage}%`, background: 'var(--cyan)' }} />
+                        </span>
+                        <span className="mc-mono">{file.coverage}%</span>
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    <SevBadge severity={file.severity} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </HudFrame>
 
       <SummaryPanel narrative={result.narrative} />
 

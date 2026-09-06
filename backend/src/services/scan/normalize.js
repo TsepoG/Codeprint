@@ -4,6 +4,7 @@ import { toPosixRelative } from './repoPath.js';
 // decides bug-vs-code-smell per message; the aggregate counters here have to
 // classify identically or the metrics and the findings array would disagree.
 import { extractFindings, isSonarRule, FINDINGS_VERSION } from './findings.js';
+import { computeHealthScore } from './healthScore.js';
 
 const COGNITIVE_COMPLEXITY_RE = /Cognitive Complexity from (\d+)/i;
 
@@ -371,6 +372,7 @@ function normalizeDependencyGraph(madgeResult) {
  *   files: object[],
  *   findings: import('./findings.js').Finding[],
  *   findingsVersion: number,
+ *   healthScore: number,
  *   dependencyGraph: {nodes: object[], edges: object[]},
  *   infrastructure: {detected: boolean, findings: object[], graph: {nodes: object[], edges: object[]}},
  *   warnings: string[],
@@ -416,12 +418,14 @@ export function normalizeScanResults({
     warnings.push(`${truncated} lower-severity findings omitted (kept the first ${findings.length})`);
   }
 
+  const duplicationPct = normalizeDuplicationPct(jscpdResult);
+
   return {
     metrics: {
       bugs,
       vulnerabilities: normalizeVulnerabilities(auditResult),
       codeSmells,
-      duplicationPct: normalizeDuplicationPct(jscpdResult),
+      duplicationPct,
     },
     files,
     findings,
@@ -430,6 +434,11 @@ export function normalizeScanResults({
     // db/index.js) is distinguishable from one that ran this code and found
     // nothing, rather than both looking like an empty `findings` array.
     findingsVersion: FINDINGS_VERSION,
+    // Computed from the findings/duplication/coverage above, not a separate
+    // signal - see healthScore.js. Absent (null, once persisted) under the
+    // exact same condition findingsVersion is: a scan whose findings were
+    // never extracted has no severity counts to score from.
+    healthScore: computeHealthScore({ findings, duplicationPct, files }),
     dependencyGraph: normalizeDependencyGraph(madgeResult),
     infrastructure,
     warnings,

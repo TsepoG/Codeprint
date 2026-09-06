@@ -117,3 +117,129 @@
   border-radius: 50%;
   flex-shrink: 0;
 }
+
+/* Overview hero: the animated health dial. See HealthDial.jsx and
+   OverviewTab.jsx. The mockup's hero is a two-column dial+narrative grid;
+   only the dial has been ported so far, so this just centers it. */
+.mc-hero {
+  display: flex;
+  justify-content: center;
+  padding: 28px;
+}
+.mc-dial-wrap {
+  position: relative;
+  width: 180px;
+  height: 180px;
+}
+.mc-dial-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.mc-dial-val {
+  font-size: 40px;
+  font-weight: 700;
+  font-family: 'Share Tech Mono', monospace;
+}
+.mc-dial-lbl {
+  font-size: 10px;
+  color: var(--ink-dim);
+  letter-spacing: 0.1em;
+  margin-top: 2px;
+}
+
+/* Metric chips. See OverviewTab.jsx. auto-fit rather than the mockup's
+   fixed 5 columns, since the infra chip only appears for Terraform repos. */
+.mc-chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.mc-chip {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 13px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+}
+.mc-chip:hover {
+  border-color: var(--cyan-dim);
+}
+.mc-chip-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+.mc-chip-label {
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.mc-chip-val {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: 'Share Tech Mono', monospace;
+}
+
+/* Panel section header, e.g. above the hotspot table. */
+.mc-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--ink-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Table, and the inline complexity/coverage bars inside its cells. */
+table.mc-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.mc-table th {
+  text-align: left;
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.mc-table td {
+  padding: 11px 18px;
+  border-bottom: 1px solid rgba(18, 34, 52, 0.7);
+  font-size: 13px;
+}
+.mc-table tr:last-child td {
+  border-bottom: none;
+}
+.mc-table tr:hover td {
+  background: rgba(77, 216, 255, 0.04);
+}
+.mc-bar {
+  display: inline-block;
+  width: 56px;
+  height: 3px;
+  background: rgba(77, 216, 255, 0.1);
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.mc-bar > span {
+  display: block;
+  height: 100%;
+}

@@ -142,12 +142,15 @@ describe('CodebaseDashboard', () => {
       // the text to change - wait for the specific "running" text instead.
       expect(await screen.findByText(/cloning and analyzing/i, {}, { timeout: 8000 })).toBeInTheDocument()
 
-      // Lands on the Overview tab by default: metrics + AI summary + warnings, no files table yet.
+      // Lands on the Overview tab by default: metrics + AI summary + warnings
+      // + a top-hotspots table naming the file, but not making it clickable
+      // (that's Hotspots' job).
       expect(await screen.findByText('12.5%', {}, { timeout: 8000 })).toBeInTheDocument()
       expect(screen.getByText(/reasonable shape overall/i)).toBeInTheDocument()
       expect(screen.getByText(/reduce complexity in src\/index\.js/i)).toBeInTheDocument()
       expect(screen.getByText(/no package-lock\.json found/i)).toBeInTheDocument()
-      expect(screen.queryByText('src/index.js')).not.toBeInTheDocument()
+      expect(screen.getByText('src/index.js')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'src/index.js' })).not.toBeInTheDocument()
 
       switchTab(/hotspots/i)
       // The file name is the control that opens its detail panel.
