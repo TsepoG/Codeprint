@@ -6,7 +6,13 @@ import { buildDependencyModel } from '../../../src/components/dashboard/dependen
 describe('HotspotsTab', () => {
   it('shows an empty message when there are no flagged files', () => {
     render(<HotspotsTab files={[]} />)
-    expect(screen.getByText(/no hotspots/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/no hotspots/i).length).toBeGreaterThan(0)
+  })
+
+  it('renders the complexity/coverage plot', () => {
+    const files = [{ name: 'a.js', complexity: 5, coverage: null, loc: 100, severity: 'low' }]
+    render(<HotspotsTab files={files} />)
+    expect(screen.getByRole('img', { name: /complexity versus test coverage plot of 1 files/i })).toBeInTheDocument()
   })
 
   it('ranks files by severity first (high, then medium, then low)', () => {
@@ -17,7 +23,7 @@ describe('HotspotsTab', () => {
     ]
     render(<HotspotsTab files={files} />)
 
-    const names = screen.getAllByRole('cell').filter((_, i) => i % 4 === 0).map((cell) => cell.textContent)
+    const names = screen.getAllByRole('cell').filter((_, i) => i % 5 === 0).map((cell) => cell.textContent)
     expect(names).toEqual(['high.js', 'medium.js', 'low.js'])
   })
 
@@ -28,7 +34,7 @@ describe('HotspotsTab', () => {
     ]
     render(<HotspotsTab files={files} />)
 
-    const names = screen.getAllByRole('cell').filter((_, i) => i % 4 === 0).map((cell) => cell.textContent)
+    const names = screen.getAllByRole('cell').filter((_, i) => i % 5 === 0).map((cell) => cell.textContent)
     expect(names).toEqual(['high-complexity.js', 'low-complexity.js'])
   })
 
@@ -41,6 +47,38 @@ describe('HotspotsTab', () => {
     render(<HotspotsTab files={files} />)
 
     expect(files).toEqual(original)
+  })
+
+  it('shows a dash for unmeasured coverage, and the real percentage when it is known', () => {
+    const files = [
+      { name: 'unmeasured.js', complexity: 1, coverage: null, severity: 'low' },
+      { name: 'measured.js', complexity: 1, coverage: 73, severity: 'low' },
+    ]
+    render(<HotspotsTab files={files} />)
+
+    const rows = screen.getAllByRole('row')
+    expect(within(rows[1]).getByText('—')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('73%')).toBeInTheDocument()
+  })
+
+  it("derives each file's duplication percentage from the duplication findings that touch it", () => {
+    const files = [
+      { name: 'src/a.js', complexity: 1, coverage: null, loc: 100, severity: 'medium' },
+      { name: 'src/b.js', complexity: 1, coverage: null, loc: 50, severity: 'medium' },
+    ]
+    const findings = [
+      {
+        id: 'd1', category: 'duplication', source: 'jscpd', file: 'src/a.js', line: 1, endLine: 20,
+        severity: 'medium', ruleId: 'duplicate-code', description: '20 duplicated lines',
+        duplicateOf: { file: 'src/b.js', line: 1, endLine: 20 },
+      },
+    ]
+    render(<HotspotsTab files={files} findings={findings} />)
+
+    const rows = screen.getAllByRole('row')
+    // a.js: 20/100 = 20%. b.js: 20/50 = 40% - both sides of the pair count.
+    expect(within(rows[1]).getByText('20%')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('40%')).toBeInTheDocument()
   })
 
   describe('view-in-context highlighting', () => {
@@ -108,25 +146,26 @@ describe('HotspotsTab', () => {
       return render(<HotspotsTab files={FILES} findings={FINDINGS} {...props} />)
     }
 
-    it('invites the user to select a file', () => {
-      renderTab()
-      expect(screen.getByText(/select a file for its detail/i)).toBeInTheDocument()
-    })
-
-    it('does not invite selection when there are no hotspots', () => {
-      render(<HotspotsTab files={[]} />)
-      expect(screen.queryByText(/select a file/i)).not.toBeInTheDocument()
-    })
+    function openRow(name) {
+      fireEvent.click(screen.getByRole('button', { name }))
+    }
 
     it('shows no panel until a file is chosen', () => {
       renderTab()
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
-    it('opens the panel on the clicked file', () => {
+    it('opens the panel on the clicked row', () => {
       renderTab()
+      openRow('src/handlers/create.js')
 
-      fireEvent.click(screen.getByRole('button', { name: 'src/handlers/create.js' }))
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByRole('heading', { name: 'src/handlers/create.js' })).toBeInTheDocument()
+    })
+
+    it('also opens the panel from the scatter plot', () => {
+      renderTab()
+      fireEvent.click(screen.getByRole('button', { name: /src\/handlers\/create\.js - complexity 14/i }))
 
       const dialog = screen.getByRole('dialog')
       expect(within(dialog).getByRole('heading', { name: 'src/handlers/create.js' })).toBeInTheDocument()
@@ -134,7 +173,7 @@ describe('HotspotsTab', () => {
 
     it('shows only that file’s findings', () => {
       renderTab()
-      fireEvent.click(screen.getByRole('button', { name: 'src/handlers/create.js' }))
+      openRow('src/handlers/create.js')
 
       const dialog = screen.getByRole('dialog')
       expect(within(dialog).getByText("'ctx' is not defined.")).toBeInTheDocument()
@@ -145,7 +184,7 @@ describe('HotspotsTab', () => {
       // Hotspots is reachable without a graph; claiming "nothing imports
       // this" would be an assertion the scan can't support.
       renderTab()
-      fireEvent.click(screen.getByRole('button', { name: 'src/handlers/create.js' }))
+      openRow('src/handlers/create.js')
 
       expect(screen.queryByRole('heading', { name: /imported by/i })).not.toBeInTheDocument()
     })
@@ -157,7 +196,7 @@ describe('HotspotsTab', () => {
       )
       renderTab({ model })
 
-      fireEvent.click(screen.getByRole('button', { name: 'src/handlers/create.js' }))
+      openRow('src/handlers/create.js')
 
       expect(screen.getByRole('heading', { name: /imported by/i })).toBeInTheDocument()
       const imports = screen.getByRole('heading', { name: /^imports/i }).parentElement
@@ -166,7 +205,7 @@ describe('HotspotsTab', () => {
 
     it('shows both copies of a duplication finding side by side', () => {
       renderTab()
-      fireEvent.click(screen.getByRole('button', { name: 'src/handlers/create.js' }))
+      openRow('src/handlers/create.js')
       fireEvent.click(screen.getByText(/compare both copies/i))
 
       const pair = document.querySelector('.snippet-pair')
@@ -178,7 +217,7 @@ describe('HotspotsTab', () => {
 
     it('closes the panel again, leaving the table in place', () => {
       renderTab()
-      fireEvent.click(screen.getByRole('button', { name: 'src/handlers/create.js' }))
+      openRow('src/handlers/create.js')
 
       fireEvent.click(screen.getByRole('button', { name: /close detail panel/i }))
 

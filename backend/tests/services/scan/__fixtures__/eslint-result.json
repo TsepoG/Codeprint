@@ -3,6 +3,7 @@
     "file": "src/index.js",
     "errorCount": 1,
     "warningCount": 1,
+    "source": "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20\nline21\nline22\nline23\nline24\nline25",
     "messages": [
       { "ruleId": "no-unused-vars", "severity": 2, "line": 4, "endLine": 4, "message": "'x' is defined but never used." },
       {
@@ -24,6 +25,7 @@
     "file": "src/legacy.js",
     "errorCount": 0,
     "warningCount": 2,
+    "source": "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20",
     "messages": [
       { "ruleId": "sonarjs/no-duplicate-string", "severity": 1, "line": 7, "endLine": 7, "message": "Define a constant instead of duplicating this literal 3 times." },
       { "ruleId": "sonarjs/no-duplicate-string", "severity": 1, "line": 19, "endLine": 19, "message": "Define a constant instead of duplicating this literal 3 times." }

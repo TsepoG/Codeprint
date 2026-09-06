@@ -125,6 +125,29 @@ test('eslint: falls back to a sonarjs-violation count when the message has no pa
   assert.equal(legacy.complexity, 2); // two sonarjs/no-duplicate-string violations, no complexity number to parse
 });
 
+test('eslint: loc is counted from the file source ESLint reports alongside its messages', () => {
+  const { files } = normalizeScanResults({
+    eslintResult: eslintOk(),
+    madgeResult: madgeOk(),
+    jscpdResult: jscpdOk(),
+    auditResult: auditOk(),
+    targetDir: TARGET_DIR,
+  });
+
+  assert.equal(files.find((f) => f.name === 'src/index.js').loc, 25);
+  assert.equal(files.find((f) => f.name === 'src/legacy.js').loc, 20);
+});
+
+test('eslint: loc is 0 when a file result has no source (e.g. a stubbed tool result in tests)', () => {
+  const eslintResult = {
+    ok: true,
+    results: [{ filePath: path.join(TARGET_DIR, 'src', 'no-source.js'), errorCount: 1, warningCount: 0, messages: [{ ruleId: 'x', severity: 2, line: 1, endLine: 1, message: 'x' }] }],
+  };
+  const { files } = normalizeScanResults({ eslintResult, madgeResult: madgeOk(), jscpdResult: jscpdOk(), auditResult: auditOk(), targetDir: TARGET_DIR });
+
+  assert.equal(files[0].loc, 0);
+});
+
 test('eslint: severity is high with an error, medium with only warnings', () => {
   const { files } = normalizeScanResults({
     eslintResult: eslintOk(),

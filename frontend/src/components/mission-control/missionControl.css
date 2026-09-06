@@ -230,6 +230,14 @@ table.mc-table {
 .mc-table tr:hover td {
   background: rgba(77, 216, 255, 0.04);
 }
+/* A row the user was sent to by "view in context" from a finding - see
+   useScrollIntoView.js. */
+.mc-table tr.row-highlighted td {
+  background: rgba(255, 184, 77, 0.1);
+}
+.mc-table tr.row-highlighted td:first-child {
+  box-shadow: inset 3px 0 0 var(--amber);
+}
 .mc-bar {
   display: inline-block;
   width: 56px;

@@ -29,6 +29,18 @@ function fileComplexity(messages) {
 }
 
 /**
+ * ESLint only includes `source` on a result that has at least one message -
+ * exactly the files this module keeps (see `normalizeEslint`) - so this only
+ * ever sees the text it needs.
+ *
+ * @param {string|undefined} source
+ * @returns {number}
+ */
+function countLines(source) {
+  return typeof source === 'string' && source !== '' ? source.split(/\r\n|\r|\n/).length : 0;
+}
+
+/**
  * @param {object} fileResult One ESLint formatter-json file result.
  * @returns {'high'|'medium'|'low'}
  */
@@ -73,6 +85,7 @@ function normalizeEslint(eslintResult, targetDir) {
         name: toPosixRelative(targetDir, fileResult.filePath),
         complexity: fileComplexity(messages),
         coverage: null,
+        loc: countLines(fileResult.source),
         severity: fileSeverity(fileResult),
       });
     }
