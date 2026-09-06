@@ -1,0 +1,119 @@
+/*
+ * "Mission control" theme - the approved next visual direction for the
+ * dashboard (see frontend/design-reference/codebase-dashboard-v3-mission-
+ * control.jsx, the source of truth for these colors/fonts/patterns).
+ *
+ * Scoped under .mc exactly as the mockup scopes it, so none of this
+ * touches the existing "blueprint" theme (CodebaseDashboard.css's --bp-*
+ * tokens, scoped under .dashboard) until a view actually adopts this
+ * class. This file only covers the foundational pieces ported so far -
+ * tokens, HudFrame, the tooltip primitive, and SevBadge. Everything else
+ * from the mockup (nav, hero, chips, tables, orbital map, drawer) still
+ * needs porting before any real view switches over.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');
+
+.mc {
+  --bg: #03060a;
+  --panel: #0a121b;
+  --panel-raised: #101c29;
+  --cyan: #4dd8ff;
+  --cyan-dim: #2a5a72;
+  --ink: #d8ecfa;
+  --ink-dim: #4f7189;
+  --mint: #4fe8a0;
+  --amber: #ffb84d;
+  --red: #ff5c5c;
+  --border: #122234;
+  font-family: 'Rajdhani', sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.mc-mono {
+  font-family: 'Share Tech Mono', monospace;
+}
+
+/* Corner-bracket panel wrapper - the recurring HUD motif. See HudFrame.jsx. */
+.mc-frame {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+.mc-corner {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  pointer-events: none;
+}
+.mc-corner.tl { top: -1px; left: -1px; border-top: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
+.mc-corner.tr { top: -1px; right: -1px; border-top: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
+.mc-corner.bl { bottom: -1px; left: -1px; border-bottom: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
+.mc-corner.br { bottom: -1px; right: -1px; border-bottom: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
+
+/* Generic hover-tooltip primitive. See Tooltip.jsx - SevBadge and (once
+   ported) the health-score dial both build on this rather than each
+   rolling their own hover/positioning logic. */
+.mc-tip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: help;
+}
+.mc-tip {
+  position: absolute;
+  left: 50%;
+  width: 250px;
+  background: #0c1622;
+  border: 1px solid var(--cyan-dim);
+  padding: 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  font-weight: 500;
+  font-family: 'Rajdhani', sans-serif;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.mc-tip.below { top: 100%; margin-top: 10px; transform: translateX(-50%) translateY(4px); }
+.mc-tip.above { bottom: 100%; margin-bottom: 10px; transform: translateX(-50%) translateY(-4px); }
+.mc-tip-wrap:hover .mc-tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+.mc-tip.below::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-bottom-color: var(--cyan-dim);
+}
+.mc-tip.above::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--cyan-dim);
+}
+
+/* Severity dot + label. See SevBadge.jsx. Composed onto the same element
+   as .mc-tip-wrap (via Tooltip's className prop), so position/cursor/
+   display already come from that rule above. */
+.mc-sev {
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.mc-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
