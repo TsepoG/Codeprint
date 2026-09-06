@@ -54,12 +54,11 @@ body {
   margin: 0;
 }
 
+/* The dashboard (the app's only real page - see App.jsx) is a full-width
+   sidebar+main shell, not the centered-column marketing-page layout this
+   width cap/border/center-alignment were written for - so #root imposes no
+   box model of its own beyond filling the viewport. */
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;

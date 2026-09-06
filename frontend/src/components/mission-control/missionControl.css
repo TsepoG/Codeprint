@@ -5,11 +5,13 @@
  *
  * Scoped under .mc exactly as the mockup scopes it, so none of this
  * touches the existing "blueprint" theme (CodebaseDashboard.css's --bp-*
- * tokens, scoped under .dashboard) until a view actually adopts this
- * class. This file only covers the foundational pieces ported so far -
- * tokens, HudFrame, the tooltip primitive, and SevBadge. Everything else
- * from the mockup (nav, hero, chips, tables, orbital map, drawer) still
- * needs porting before any real view switches over.
+ * tokens, scoped under .dashboard) except where a view has actually adopted
+ * this class. `.mc` is now applied at the app shell's own root (see
+ * CodebaseDashboard.jsx's outer element, `.mc-shell`), so the sidebar, top
+ * bar, and every tab's content all inherit its tokens/fonts by default; the
+ * one deliberate holdout is the click-through detail drawer (FileDetailPanel/
+ * InfraDetailPanel), shared across several tabs and still blueprint-styled -
+ * restyling it is a separate piece of work, not owned by any one view.
  */
 @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');
 
@@ -26,8 +28,340 @@
   --red: #ff5c5c;
   --border: #122234;
   font-family: 'Rajdhani', sans-serif;
+  /* The app shell's own base (see index.css's :root) sets an 18px/145% body
+     font with letter-spacing for its original marketing-page chrome - none
+     of which the mockup's typography assumes, so it's reset here rather
+     than leaking into every unstyled label/paragraph under .mc. */
+  font-size: 16px;
+  line-height: normal;
+  letter-spacing: normal;
   color: var(--ink);
   background: var(--bg);
+}
+
+/* The app shell root (see CodebaseDashboard.jsx) - sidebar + main, filling
+   the viewport. Deliberately separate from the bare `.mc` token/font scope
+   above, which is also applied to each tab's own inner wrapper purely for
+   its tokens - those must NOT also become flex boxes with their own min-height. */
+.mc-shell {
+  display: flex;
+  min-height: 100svh;
+}
+@media (max-width: 720px) {
+  .mc-shell {
+    flex-direction: column;
+  }
+}
+
+/* Sidebar: brand mark, vertical nav, mission title block. */
+.mc-side {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 14px;
+}
+@media (max-width: 720px) {
+  .mc-side {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+.mc-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 18px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.mc-mark {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--cyan);
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+}
+.mc-mark::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: var(--cyan);
+}
+.mc-brand-name {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+}
+
+.mc-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 18px;
+}
+.mc-navitem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  border-left: 2px solid transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--ink-dim);
+  background: none;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+}
+.mc-navitem.active {
+  color: var(--cyan);
+  border-left: 2px solid var(--cyan);
+  background: rgba(77, 216, 255, 0.06);
+}
+.mc-navitem:hover:not(.active):not(:disabled) {
+  color: var(--ink);
+}
+.mc-navitem:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mc-tblock {
+  margin-top: auto;
+  border: 1px solid var(--border);
+  font-size: 10px;
+}
+.mc-tblock-row {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.mc-tblock-row:last-child {
+  border-bottom: none;
+}
+.mc-tblock-cell {
+  flex: 1;
+  padding: 7px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mc-tblock-label {
+  display: block;
+  color: var(--ink-dim);
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  font-size: 9px;
+}
+
+/* Main column: top bar + scrollable canvas. */
+.mc-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 14px 26px;
+  border-bottom: 1px solid var(--border);
+}
+.mc-repo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--ink-dim);
+  letter-spacing: 0.02em;
+}
+.mc-repo b {
+  color: var(--ink);
+  font-weight: 700;
+}
+.mc-elapsed {
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+.mc-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--mint);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.mc-status.busy {
+  color: var(--amber);
+}
+.mc-status.failed {
+  color: var(--red);
+}
+.mc-status.idle {
+  color: var(--ink-dim);
+}
+.mc-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+.mc-status-dot.pulse {
+  animation: mc-pulse 1.6s ease-in-out infinite;
+}
+@keyframes mc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mc-status-dot.pulse {
+    animation: none;
+  }
+}
+
+/* Compact "paste a repo URL and scan" form, folded into the top bar so the
+   shell (sidebar included) is always present - even before a scan has run -
+   rather than the old page-header form shown only pre-scan. */
+.mc-scan-form {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.mc-scan-form input {
+  font: inherit;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  width: 220px;
+  max-width: 40vw;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  color: var(--ink);
+}
+.mc-scan-form input::placeholder {
+  color: var(--ink-dim);
+}
+.mc-scan-form input:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 1px;
+}
+.mc-scan-form input:disabled {
+  opacity: 0.6;
+}
+/* HUD corner-bracket treatment on the button, echoing .mc-frame at a size
+   that fits inline in the top bar. */
+.mc-scan-button {
+  position: relative;
+  font: inherit;
+  font-family: 'Share Tech Mono', monospace;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  padding: 7px 16px;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  background: rgba(255, 184, 77, 0.1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mc-scan-button::before,
+.mc-scan-button::after {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: var(--amber);
+  border-style: solid;
+  pointer-events: none;
+}
+.mc-scan-button::before {
+  top: -1px;
+  left: -1px;
+  border-width: 2px 0 0 2px;
+}
+.mc-scan-button::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 2px 2px 0;
+}
+.mc-scan-button:hover:not(:disabled) {
+  background: rgba(255, 184, 77, 0.22);
+}
+.mc-scan-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mc-canvas {
+  flex: 1;
+  padding: 28px;
+  overflow: auto;
+  position: relative;
+}
+
+/* The canvas's pre-scan / in-progress / failed state - shown in place of a
+   tab's content, so the shell around it never has to disappear. */
+.mc-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 320px;
+  padding: 40px;
+  text-align: center;
+  color: var(--ink-dim);
+}
+.mc-placeholder.failed {
+  color: var(--red);
+}
+.mc-spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--amber);
+  animation: mc-spin 0.8s linear infinite;
+}
+@keyframes mc-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mc-spinner {
+    animation: none;
+  }
+}
+
+/* A note shown above a tab's content - e.g. "viewing a past scan". */
+.mc-notice {
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  border: 1px solid var(--cyan-dim);
+  background: rgba(77, 216, 255, 0.06);
+  color: var(--ink);
+  font-size: 13px;
 }
 
 .mc-mono {
@@ -118,13 +452,50 @@
   flex-shrink: 0;
 }
 
-/* Overview hero: the animated health dial. See HealthDial.jsx and
-   OverviewTab.jsx. The mockup's hero is a two-column dial+narrative grid;
-   only the dial has been ported so far, so this just centers it. */
+/* Overview hero: the animated health dial plus a status headline, a
+   data-derived summary line, and the top few hotspots. See HealthDial.jsx
+   and OverviewTab.jsx. */
 .mc-hero {
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 32px;
   padding: 28px;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .mc-hero {
+    grid-template-columns: 1fr;
+  }
+}
+.mc-hero-status {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.mc-hero-sub {
+  font-size: 13.5px;
+  color: var(--ink-dim);
+  line-height: 1.65;
+  max-width: 460px;
+  margin-bottom: 14px;
+}
+.mc-hero-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+.mc-hero-item .mc-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mc-hero-item span:last-child {
+  color: var(--ink-dim);
 }
 .mc-dial-wrap {
   position: relative;
@@ -230,6 +601,10 @@ table.mc-table {
 .mc-table tr:hover td {
   background: rgba(77, 216, 255, 0.04);
 }
+.mc-table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 /* A row the user was sent to by "view in context" from a finding - see
    useScrollIntoView.js. */
 .mc-table tr.row-highlighted td {
@@ -323,4 +698,129 @@ table.mc-table {
   text-align: center;
   color: var(--ink-dim);
   font-size: 12.5px;
+}
+
+/* A findings-table rule cell: the rule id on its own line, the tool's
+   description underneath. See InfrastructureTab.jsx. */
+.mc-rule-id {
+  display: block;
+  color: var(--cyan);
+}
+.mc-rule-desc {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+/* Small pill for a tool name (checkov/tfsec/etc) in a table cell. */
+.mc-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  color: var(--ink-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Infrastructure resource graph: same schematic language as the orbital
+   dependency map, but rectangles wired with right-angle traces rather than
+   circles on a radial layout - see InfraGraph.jsx - so the infra layer never
+   reads as the app's import graph. */
+.mc-infra-graph {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 4px 0 8px;
+}
+.mc-infra-node rect {
+  fill: var(--panel-raised);
+  stroke: var(--cyan-dim);
+  stroke-width: 1;
+}
+.mc-infra-node-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  fill: var(--ink);
+}
+.mc-infra-node-module {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  fill: var(--ink-dim);
+  letter-spacing: 0.04em;
+}
+.mc-infra-trace {
+  fill: none;
+  stroke: var(--cyan-dim);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+.mc-infra-node.clickable {
+  cursor: pointer;
+}
+.mc-infra-node.clickable:hover rect,
+.mc-infra-node.selected rect {
+  stroke: var(--cyan);
+  fill: rgba(77, 216, 255, 0.12);
+}
+.mc-infra-node.clickable:focus {
+  outline: none;
+}
+.mc-infra-node.clickable:focus-visible rect {
+  stroke: var(--cyan);
+  stroke-width: 2;
+}
+
+/* History tab's trend sparklines. See TrendChart.jsx. */
+.mc-trend-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+@media (max-width: 640px) {
+  .mc-trend-row {
+    grid-template-columns: 1fr;
+  }
+}
+.mc-trend-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+  margin-bottom: 8px;
+}
+.mc-trend-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.mc-trend-gridline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.mc-trend-line {
+  fill: none;
+  stroke-width: 2;
+}
+.mc-trend-values {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-dim);
+  margin-top: 6px;
+}
+.mc-trend-current {
+  font-weight: 700;
+}
+
+/* History table's "findings recorded?" column. */
+.mc-availability {
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.mc-availability-unavailable {
+  font-style: italic;
 }

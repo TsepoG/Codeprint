@@ -187,18 +187,19 @@ describe('OverviewTab top hotspot targets', () => {
 
   it('shows a coverage percentage when one is recorded, and a dash otherwise', () => {
     render(<OverviewTab result={{ ...BASE, files: FILES }} />)
+    const table = screen.getByRole('table')
 
-    const aRow = screen.getByText('a.js').closest('tr')
+    const aRow = within(table).getByText('a.js').closest('tr')
     expect(within(aRow).getByText('—')).toBeInTheDocument()
 
-    const bRow = screen.getByText('b.js').closest('tr')
+    const bRow = within(table).getByText('b.js').closest('tr')
     expect(within(bRow).getByText('41%')).toBeInTheDocument()
   })
 
   it('shows each row\'s status as a SevBadge, with its explanatory tooltip', () => {
     render(<OverviewTab result={{ ...BASE, files: FILES }} />)
 
-    const bRow = screen.getByText('b.js').closest('tr')
+    const bRow = within(screen.getByRole('table')).getByText('b.js').closest('tr')
     expect(within(bRow).getByText('CRITICAL')).toBeInTheDocument()
     expect(within(bRow).getByText(/fix before adding more code here/i)).toBeInTheDocument()
   })
@@ -206,5 +207,54 @@ describe('OverviewTab top hotspot targets', () => {
   it('does not make hotspot rows clickable here - that is the Hotspots tab\'s job', () => {
     render(<OverviewTab result={{ ...BASE, files: FILES }} />)
     expect(screen.queryByRole('button', { name: 'b.js' })).not.toBeInTheDocument()
+  })
+})
+
+describe('OverviewTab hero status', () => {
+  const FILES = [
+    { name: 'a.js', complexity: 3, coverage: null, severity: 'low' },
+    { name: 'b.js', complexity: 20, coverage: 41, severity: 'high' },
+    { name: 'c.js', complexity: 12, coverage: 60, severity: 'medium' },
+    { name: 'd.js', complexity: 5, coverage: null, severity: 'low' },
+  ]
+
+  it('reads healthy in mint at 75 or above', () => {
+    render(<OverviewTab result={{ ...BASE, healthScore: 75 }} />)
+    expect(screen.getByText(/nominal — healthy/i)).toHaveStyle({ color: 'var(--mint)' })
+  })
+
+  it('reads caution in amber between 50 and 74', () => {
+    render(<OverviewTab result={{ ...BASE, healthScore: 50 }} />)
+    expect(screen.getByText(/caution — attention required/i)).toHaveStyle({ color: 'var(--amber)' })
+  })
+
+  it('reads critical in red below 50', () => {
+    render(<OverviewTab result={{ ...BASE, healthScore: 49 }} />)
+    expect(screen.getByText(/critical — immediate action required/i)).toHaveStyle({ color: 'var(--red)' })
+  })
+
+  it('reads as unavailable when there is no score to grade', () => {
+    render(<OverviewTab result={{ ...BASE, healthScore: null }} />)
+    expect(screen.getByText(/health score unavailable/i)).toBeInTheDocument()
+  })
+
+  it('summarizes how many files were flagged, and how many critically', () => {
+    render(<OverviewTab result={{ ...BASE, files: FILES }} />)
+    expect(screen.getByText('4 files flagged this scan, 1 at critical severity.')).toBeInTheDocument()
+  })
+
+  it('says so when nothing was flagged', () => {
+    render(<OverviewTab result={BASE} />)
+    expect(screen.getByText('No files were flagged this scan.')).toBeInTheDocument()
+  })
+
+  it('lists only the top 3 hotspots, worst first, same ranking as the table', () => {
+    render(<OverviewTab result={{ ...BASE, files: FILES }} />)
+
+    const items = document.querySelectorAll('.mc-hero-item')
+    expect(items).toHaveLength(3)
+    expect(items[0]).toHaveTextContent('b.js')
+    expect(items[1]).toHaveTextContent('c.js')
+    expect(items[2]).toHaveTextContent('d.js') // both 'low', but higher complexity (5 > 3) than a.js
   })
 })

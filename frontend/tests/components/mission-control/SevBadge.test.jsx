@@ -19,6 +19,14 @@ describe('SevBadge', () => {
     expect(container.querySelector('.mc-dot')).toBeInTheDocument()
   })
 
+  it('shows a custom label instead of the severity word, when given one', () => {
+    render(<SevBadge severity="low" label="Complete" />)
+    expect(screen.getByText('Complete')).toBeInTheDocument()
+    expect(screen.queryByText(SEV_LABEL.low)).not.toBeInTheDocument()
+    // The tooltip still explains the underlying severity, not the label.
+    expect(screen.getByText(SEV_DESC.low)).toBeInTheDocument()
+  })
+
   it('is built on the shared tooltip primitive', () => {
     const { container } = render(<SevBadge severity="high" />)
     const wrap = container.querySelector('.mc-tip-wrap')

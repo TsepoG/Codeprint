@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import HudFrame from '../mission-control/HudFrame.jsx'
+import SevBadge from '../mission-control/SevBadge.jsx'
 import TrendChart from './TrendChart.jsx'
-import { SeverityBadge } from './shared.jsx'
 
 const PAGE_SIZE = 10
 
@@ -36,13 +37,25 @@ function HistoryTab({ apiBaseUrl, repoUrl, onViewScan }) {
   }, [apiBaseUrl, repoUrl])
 
   if (state.status === 'loading') {
-    return <p className="empty-note">Loading scan history…</p>
+    return (
+      <div className="dashboard-section mc">
+        <p className="empty-note">Loading scan history…</p>
+      </div>
+    )
   }
   if (state.status === 'error') {
-    return <p className="empty-note">Could not load scan history for this repo.</p>
+    return (
+      <div className="dashboard-section mc">
+        <p className="empty-note">Could not load scan history for this repo.</p>
+      </div>
+    )
   }
   if (state.scans.length === 0) {
-    return <p className="empty-note">No past scans recorded for this repo yet.</p>
+    return (
+      <div className="dashboard-section mc">
+        <p className="empty-note">No past scans recorded for this repo yet.</p>
+      </div>
+    )
   }
 
   // The API returns most-recent-first; charts read left-to-right chronologically.
@@ -50,24 +63,24 @@ function HistoryTab({ apiBaseUrl, repoUrl, onViewScan }) {
   const completed = chronological.filter((scan) => scan.status === 'complete')
 
   return (
-    <div className="dashboard-section">
-      <div className="trend-row">
+    <div className="dashboard-section mc">
+      <div className="mc-trend-row">
         <TrendChart
           title="AVG COMPLEXITY"
           unit=""
-          color="var(--bp-cyan)"
+          color="var(--cyan)"
           points={completed.map((scan) => ({ value: scan.avgComplexity ?? 0 }))}
         />
         <TrendChart
           title="DUPLICATION"
           unit="%"
-          color="var(--bp-accent)"
+          color="var(--amber)"
           points={completed.map((scan) => ({ value: scan.metrics.duplicationPct }))}
         />
       </div>
 
-      <div className="table-scroll">
-        <table className="files-table history-table">
+      <HudFrame>
+        <table className="mc-table">
           <thead>
             <tr>
               <th>Scanned</th>
@@ -84,34 +97,34 @@ function HistoryTab({ apiBaseUrl, repoUrl, onViewScan }) {
           <tbody>
             {state.scans.map((scan) => (
               <tr key={scan.id}>
-                <td className="file-name">{formatTimestamp(scan.completedAt)}</td>
-                <td className="file-name">{scan.branch ?? '—'}</td>
-                <td className="file-name">{scan.commitSha ? scan.commitSha.slice(0, 7) : '—'}</td>
-                <td className="numeric">{scan.metrics ? scan.metrics.bugs : '—'}</td>
-                <td className="numeric">{scan.metrics ? scan.metrics.vulnerabilities : '—'}</td>
-                <td className="numeric">
+                <td className="mc-mono">{formatTimestamp(scan.completedAt)}</td>
+                <td className="mc-mono">{scan.branch ?? '—'}</td>
+                <td className="mc-mono">{scan.commitSha ? scan.commitSha.slice(0, 7) : '—'}</td>
+                <td className="numeric mc-mono">{scan.metrics ? scan.metrics.bugs : '—'}</td>
+                <td className="numeric mc-mono">{scan.metrics ? scan.metrics.vulnerabilities : '—'}</td>
+                <td className="numeric mc-mono">
                   {scan.metrics ? `${scan.metrics.duplicationPct.toFixed(1)}%` : '—'}
                 </td>
                 <td>
                   {scan.status === 'complete' ? (
-                    <SeverityBadge severity="low" label="Complete" />
+                    <SevBadge severity="low" label="Complete" />
                   ) : (
-                    <SeverityBadge severity="high" label="Failed" />
+                    <SevBadge severity="high" label="Failed" />
                   )}
                 </td>
                 <td>
                   {scan.status === 'complete' &&
                     (scan.findingsAvailable ? (
-                      <span className="findings-availability">Available</span>
+                      <span className="mc-availability">Available</span>
                     ) : (
                       // This scan predates per-finding capture - its metrics
                       // are real, but there's nothing to list behind them.
-                      <span className="findings-availability findings-unavailable">Not recorded</span>
+                      <span className="mc-availability mc-availability-unavailable">Not recorded</span>
                     ))}
                 </td>
                 <td>
                   {scan.status === 'complete' && (
-                    <button type="button" className="link-button" onClick={() => onViewScan(scan.id)}>
+                    <button type="button" className="mc-link" onClick={() => onViewScan(scan.id)}>
                       View
                     </button>
                   )}
@@ -120,7 +133,7 @@ function HistoryTab({ apiBaseUrl, repoUrl, onViewScan }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </HudFrame>
     </div>
   )
 }

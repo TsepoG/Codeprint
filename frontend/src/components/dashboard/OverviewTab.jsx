@@ -2,11 +2,12 @@ import { Bug, ShieldAlert, FileCode2, Copy, Server } from 'lucide-react'
 import HudFrame from '../mission-control/HudFrame.jsx'
 import HealthDial from '../mission-control/HealthDial.jsx'
 import SevBadge from '../mission-control/SevBadge.jsx'
-import { SEV } from '../mission-control/severity.js'
+import { SEV, SEV_LABEL } from '../mission-control/severity.js'
 import SummaryPanel from './SummaryPanel.jsx'
 import { rankFiles } from './rankFiles.js'
 
 const MAX_HOTSPOT_ROWS = 5
+const MAX_HERO_ITEMS = 3
 const MAX_COMPLEXITY_SCALE = 30
 
 function formatCount(value) {
@@ -19,6 +20,20 @@ function worstSeverity(findings) {
   if (findings.some((finding) => finding.severity === 'high')) return 'high'
   if (findings.some((finding) => finding.severity === 'medium')) return 'medium'
   return 'low'
+}
+
+/**
+ * The hero's headline + color, on the same 75/50 thresholds as the dial
+ * itself (see HealthDial.jsx) so the two always agree.
+ *
+ * @param {number|null} score
+ * @returns {{text: string, color: string}}
+ */
+function heroStatus(score) {
+  if (typeof score !== 'number') return { text: 'Health score unavailable', color: 'var(--ink-dim)' }
+  if (score >= 75) return { text: 'Nominal — healthy', color: 'var(--mint)' }
+  if (score >= 50) return { text: 'Caution — attention required', color: 'var(--amber)' }
+  return { text: 'Critical — immediate action required', color: 'var(--red)' }
 }
 
 /**
@@ -67,7 +82,11 @@ function OverviewTab({ result, onSelectCategory }) {
   const findings = result.findings ?? []
   const infrastructure = result.infrastructure
   const infraFindings = infrastructure?.findings ?? []
-  const hotspots = rankFiles(result.files ?? []).slice(0, MAX_HOTSPOT_ROWS)
+  const files = result.files ?? []
+  const ranked = rankFiles(files)
+  const hotspots = ranked.slice(0, MAX_HOTSPOT_ROWS)
+  const status = heroStatus(result.healthScore ?? null)
+  const criticalFileCount = files.filter((file) => file.severity === 'high').length
 
   /** @param {string} category */
   const severityFor = (category) => worstSeverity(findings.filter((finding) => finding.category === category))
@@ -84,6 +103,27 @@ function OverviewTab({ result, onSelectCategory }) {
       <HudFrame style={{ marginBottom: 18 }}>
         <div className="mc-hero">
           <HealthDial score={result.healthScore ?? null} />
+          <div>
+            <div className="mc-hero-status" style={{ color: status.color }}>
+              {status.text}
+            </div>
+            <div className="mc-hero-sub">
+              {files.length === 0
+                ? 'No files were flagged this scan.'
+                : `${files.length} file${files.length === 1 ? '' : 's'} flagged this scan${
+                    criticalFileCount > 0 ? `, ${criticalFileCount} at critical severity` : ''
+                  }.`}
+            </div>
+            {hotspots.slice(0, MAX_HERO_ITEMS).map((file) => (
+              <div className="mc-hero-item" key={file.name}>
+                <span className="mc-dot" style={{ background: SEV[file.severity] }} />
+                <span className="mc-mono">{file.name}</span>
+                <span>
+                  cx {file.complexity} · {SEV_LABEL[file.severity]}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </HudFrame>
 
