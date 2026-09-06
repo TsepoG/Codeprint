@@ -67,7 +67,7 @@ const TERRAFORM_RESULT = {
 
 function scanRepo(url) {
   fireEvent.change(screen.getByLabelText('GitHub repository URL'), { target: { value: url } })
-  fireEvent.click(screen.getByRole('button', { name: /scan repository/i }))
+  fireEvent.click(screen.getByRole('button', { name: /^scan$/i }))
 }
 
 function switchTab(name) {
@@ -142,19 +142,23 @@ describe('CodebaseDashboard', () => {
       // the text to change - wait for the specific "running" text instead.
       expect(await screen.findByText(/cloning and analyzing/i, {}, { timeout: 8000 })).toBeInTheDocument()
 
-      // Lands on the Overview tab by default: metrics + AI summary + warnings, no files table yet.
+      // Lands on the Overview tab by default: metrics + AI summary + warnings
+      // + a top-hotspots table naming the file, but not making it clickable
+      // (that's Hotspots' job).
       expect(await screen.findByText('12.5%', {}, { timeout: 8000 })).toBeInTheDocument()
       expect(screen.getByText(/reasonable shape overall/i)).toBeInTheDocument()
       expect(screen.getByText(/reduce complexity in src\/index\.js/i)).toBeInTheDocument()
       expect(screen.getByText(/no package-lock\.json found/i)).toBeInTheDocument()
-      expect(screen.queryByText('src/index.js')).not.toBeInTheDocument()
+      // Scoped to the table: the hero's own top-hotspot mini-list also names this file.
+      expect(within(screen.getByRole('table')).getByText('src/index.js')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'src/index.js' })).not.toBeInTheDocument()
 
       switchTab(/hotspots/i)
       // The file name is the control that opens its detail panel.
       expect(screen.getByRole('button', { name: 'src/index.js' })).toBeInTheDocument()
 
       switchTab(/dependency map/i)
-      expect(screen.getByText(/1 files, 0 imports/i)).toBeInTheDocument()
+      expect(screen.getByText(/1 modules, 0 imports/i)).toBeInTheDocument()
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/scan'),
@@ -584,6 +588,54 @@ describe('CodebaseDashboard', () => {
 
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
         expect(screen.getByText('12.5%')).toBeInTheDocument() // still on Overview
+      },
+      15000,
+    )
+  })
+
+  describe('mission-control shell', () => {
+    it('shows a neutral status and disabled navigation before any scan has run', () => {
+      render(<CodebaseDashboard />)
+      expect(screen.getByText('STANDBY')).toBeInTheDocument()
+      expect(screen.getByText('No repository scanned yet')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Overview' })).toBeDisabled()
+    })
+
+    it(
+      'populates the sidebar mission block and enables navigation once a scan completes',
+      async () => {
+        mockFetchSequence({
+          post: { ok: true, json: async () => ({ jobId: 'job-shell', status: 'queued' }) },
+          gets: [{ ok: true, json: async () => ({ status: 'complete', result: SCAN_RESULT }) }],
+        })
+
+        render(<CodebaseDashboard />)
+        scanRepo('https://github.com/owner/repo')
+        await screen.findByText('12.5%', {}, { timeout: 8000 })
+
+        expect(screen.getByText('Mission').closest('.mc-tblock-cell')).toHaveTextContent('owner/repo')
+        expect(screen.getByText('Branch').closest('.mc-tblock-cell')).toHaveTextContent('main')
+        expect(screen.getByText('Commit').closest('.mc-tblock-cell')).toHaveTextContent('abc1234')
+        expect(screen.getByText('SCAN COMPLETE')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Overview' })).not.toBeDisabled()
+      },
+      15000,
+    )
+
+    it(
+      'shows a failed status without losing the shell around it',
+      async () => {
+        mockFetchSequence({
+          post: { ok: true, json: async () => ({ jobId: 'job-fail', status: 'queued' }) },
+          gets: [{ ok: true, json: async () => ({ status: 'failed', error: 'Could not clone repository: not found' }) }],
+        })
+
+        render(<CodebaseDashboard />)
+        scanRepo('https://github.com/owner/repo')
+
+        await screen.findByRole('alert', {}, { timeout: 8000 })
+        expect(screen.getByText('SCAN FAILED')).toBeInTheDocument()
+        expect(screen.getByText('CODEPRINT')).toBeInTheDocument()
       },
       15000,
     )

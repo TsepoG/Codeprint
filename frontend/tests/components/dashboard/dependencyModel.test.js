@@ -51,6 +51,39 @@ describe('buildDependencyModel', () => {
     })
   })
 
+  describe('edgeIsCircular', () => {
+    it('flags an edge whose two ends are in the same cycle', () => {
+      const graph = model(['a', 'b'], [['a', 'b'], ['b', 'a']])
+      expect(graph.edgeIsCircular('a', 'b')).toBe(true)
+      expect(graph.edgeIsCircular('b', 'a')).toBe(true)
+    })
+
+    it('does not flag an edge into a cycle from outside it', () => {
+      const graph = model(['a', 'b', 'c'], [['a', 'b'], ['b', 'a'], ['c', 'a']])
+      expect(graph.edgeIsCircular('c', 'a')).toBe(false)
+    })
+
+    it('does not flag an edge between two different cycles, even though both ends are individually cyclic', () => {
+      const graph = model(
+        ['a', 'b', 'x', 'y'],
+        [['a', 'b'], ['b', 'a'], ['x', 'y'], ['y', 'x'], ['a', 'x']],
+      )
+      expect(graph.edgeIsCircular('a', 'x')).toBe(false)
+      expect(graph.edgeIsCircular('a', 'b')).toBe(true)
+      expect(graph.edgeIsCircular('x', 'y')).toBe(true)
+    })
+
+    it('flags a self-loop', () => {
+      const graph = model(['a'], [['a', 'a']])
+      expect(graph.edgeIsCircular('a', 'a')).toBe(true)
+    })
+
+    it('is false for a plain, acyclic edge', () => {
+      const graph = model(['a', 'b'], [['a', 'b']])
+      expect(graph.edgeIsCircular('a', 'b')).toBe(false)
+    })
+  })
+
   describe('cycle detection', () => {
     it('reports no cycle for a plain chain', () => {
       const graph = model(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']])

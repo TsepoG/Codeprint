@@ -116,7 +116,7 @@ function InfraGraph({ nodes, edges, onSelectNode, selectedNode }) {
 
   return (
     <svg
-      className="infra-graph"
+      className="mc-infra-graph"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-label={`Infrastructure graph with ${nodes.length} resources and ${edges.length} relationships`}
@@ -138,7 +138,7 @@ function InfraGraph({ nodes, edges, onSelectNode, selectedNode }) {
           <path
             key={`${edge.from}->${edge.to}`}
             d={`M ${fromX} ${from.y + NODE_H} V ${channelY} H ${toX} V ${entryY}`}
-            className="infra-trace"
+            className="mc-infra-trace"
           />
         )
       })}
@@ -147,7 +147,7 @@ function InfraGraph({ nodes, edges, onSelectNode, selectedNode }) {
         const pos = positions.get(id)
         const { modulePath, resource } = splitNodeId(id)
         const selected = id === selectedNode
-        const className = `infra-node${selected ? ' selected' : ''}${onSelectNode ? ' clickable' : ''}`
+        const className = `mc-infra-node${selected ? ' selected' : ''}${onSelectNode ? ' clickable' : ''}`
 
         const interaction = onSelectNode
           ? {
@@ -169,11 +169,11 @@ function InfraGraph({ nodes, edges, onSelectNode, selectedNode }) {
           <g key={id} className={className} {...interaction}>
             <rect x={pos.x} y={pos.y} width={NODE_W} height={NODE_H} rx="2" />
             {modulePath && (
-              <text x={pos.x + 8} y={pos.y + 15} className="infra-node-module">
+              <text x={pos.x + 8} y={pos.y + 15} className="mc-infra-node-module">
                 {truncateEnd(modulePath, 24)}
               </text>
             )}
-            <text x={pos.x + 8} y={modulePath ? pos.y + 30 : pos.y + 24} className="infra-node-label">
+            <text x={pos.x + 8} y={modulePath ? pos.y + 30 : pos.y + 24} className="mc-infra-node-label">
               {truncateMiddle(resource, 22)}
             </text>
             <title>{id}</title>

@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import HudFrame from '../mission-control/HudFrame.jsx'
+import SevBadge from '../mission-control/SevBadge.jsx'
 import InfraGraph from './InfraGraph.jsx'
 import InfraDetailPanel from './InfraDetailPanel.jsx'
-import { SeverityBadge } from './shared.jsx'
 import { useScrollIntoView } from './useScrollIntoView.js'
 import { keyFromNode, keyFromFinding, sameResource } from './infraResource.js'
 
@@ -34,7 +35,7 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile, findi
 
   if (!infrastructure?.detected) {
     return (
-      <div className="dashboard-section">
+      <div className="dashboard-section mc">
         <p className="empty-note">No Terraform found in this repo, so no infrastructure was scanned.</p>
       </div>
     )
@@ -58,7 +59,7 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile, findi
     : null
 
   return (
-    <div className="dashboard-section">
+    <div className="dashboard-section mc">
       {failures.length > 0 && (
         <div className="status-panel warning-panel" role="status">
           <strong>Partial results - some infrastructure checks did not complete:</strong>
@@ -71,32 +72,38 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile, findi
         </div>
       )}
 
-      <p className="section-caption">
-        Resource graph - {graph.nodes.length} resources, {graph.edges.length} relationships
-        {graph.nodes.length > 0 && ' - select a resource for its detail'}
-      </p>
-      <InfraGraph
-        nodes={graph.nodes}
-        edges={graph.edges}
-        onSelectNode={(id) => setSelectedResource(keyFromNode(id))}
-        selectedNode={selectedNodeId}
-      />
-
-      <h3 className="infra-findings-heading">
-        Findings
-        {ranked.length > MAX_ROWS && (
-          <span className="infra-findings-count">
-            {' '}
-            showing {MAX_ROWS} of {ranked.length}
+      <HudFrame style={{ marginBottom: 18 }}>
+        <div className="mc-panel-head">
+          <span>Resource graph</span>
+          <span className="mc-mono" style={{ fontSize: 10.5 }}>
+            {graph.nodes.length} resources, {graph.edges.length} relationships
           </span>
-        )}
-      </h3>
+        </div>
+        <div style={{ padding: 20 }}>
+          <InfraGraph
+            nodes={graph.nodes}
+            edges={graph.edges}
+            onSelectNode={(id) => setSelectedResource(keyFromNode(id))}
+            selectedNode={selectedNodeId}
+          />
+        </div>
+      </HudFrame>
 
-      {ranked.length === 0 ? (
-        <p className="empty-note">No misconfigurations found in this repo&apos;s Terraform.</p>
-      ) : (
-        <div className="table-scroll">
-          <table className="files-table infra-findings-table">
+      <HudFrame>
+        <div className="mc-panel-head">
+          <span>Findings</span>
+          {ranked.length > MAX_ROWS && (
+            <span className="mc-mono" style={{ fontSize: 10.5 }}>
+              showing {MAX_ROWS} of {ranked.length}
+            </span>
+          )}
+        </div>
+        {ranked.length === 0 ? (
+          <p className="empty-note" style={{ padding: '0 18px 16px' }}>
+            No misconfigurations found in this repo&apos;s Terraform.
+          </p>
+        ) : (
+          <table className="mc-table">
             <thead>
               <tr>
                 <th>Resource</th>
@@ -119,13 +126,9 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile, findi
                     ref={isScrollTarget ? highlightRef : undefined}
                     className={highlighted ? 'row-highlighted' : undefined}
                   >
-                    <td className="file-name">
+                    <td className="mc-mono">
                       {finding.resource ? (
-                        <button
-                          type="button"
-                          className="file-name-button"
-                          onClick={() => setSelectedResource(keyFromFinding(finding))}
-                        >
+                        <button type="button" className="mc-link" onClick={() => setSelectedResource(keyFromFinding(finding))}>
                           {finding.resource}
                         </button>
                       ) : (
@@ -133,26 +136,26 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile, findi
                       )}
                     </td>
                     <td>
-                      <span className="infra-rule-id">{finding.ruleId ?? '—'}</span>
-                      <span className="infra-rule-description">{finding.description}</span>
+                      <span className="mc-rule-id mc-mono">{finding.ruleId ?? '—'}</span>
+                      <span className="mc-rule-desc">{finding.description}</span>
                     </td>
                     <td>
-                      <SeverityBadge severity={finding.severity} />
+                      <SevBadge severity={finding.severity} />
                     </td>
                     <td>
-                      <span className={`infra-source infra-source-${finding.source}`}>{finding.source}</span>
+                      <span className="mc-tag mc-mono">{finding.source}</span>
                     </td>
-                    <td className="file-name">
+                    <td className="mc-mono">
                       {finding.file ?? '—'}
-                      {finding.line != null && <span className="infra-line">:{finding.line}</span>}
+                      {finding.line != null && <span style={{ color: 'var(--ink-dim)' }}>:{finding.line}</span>}
                     </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </HudFrame>
 
       <InfraDetailPanel
         resourceKey={selectedResource}

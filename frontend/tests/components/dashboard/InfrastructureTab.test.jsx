@@ -62,7 +62,7 @@ describe('InfrastructureTab', () => {
     // Scoped to the table: the graph above it labels the same resource.
     const row = within(screen.getByRole('table')).getByText('aws_security_group.web').closest('tr')
     expect(within(row).getByText('aws-ec2-no-public-ingress-sgr')).toBeInTheDocument()
-    expect(within(row).getByText('High')).toBeInTheDocument()
+    expect(within(row).getByText('CRITICAL')).toBeInTheDocument() // 'high' severity, via SevBadge
     expect(within(row).getByText('tfsec')).toBeInTheDocument()
     expect(within(row).getByText(/infra\/network\.tf/)).toBeInTheDocument()
     expect(within(row).getByText(':4')).toBeInTheDocument()
@@ -211,7 +211,7 @@ describe('InfrastructureTab', () => {
       const table = screen.getByRole('table')
       fireEvent.click(within(table).getByRole('button', { name: 'aws_s3_bucket.assets' }))
 
-      const selected = container.querySelectorAll('.infra-node.selected')
+      const selected = container.querySelectorAll('.mc-infra-node.selected')
       expect(selected).toHaveLength(1)
       expect(selected[0]).toHaveAttribute('aria-label', 'infra/aws_s3_bucket.assets - view resource')
     })

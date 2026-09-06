@@ -16,6 +16,9 @@
  * @property {(id: string) => string[]} dependencies What this module imports.
  * @property {(id: string) => string[]|null} cyclePath A cycle through this
  *   module as `[id, ...others, id]`, or null if it's in none.
+ * @property {(from: string, to: string) => boolean} edgeIsCircular Whether
+ *   this specific edge is part of a cycle (both ends in the same group),
+ *   not just whether either end is in *some* cycle.
  * @property {(id: string) => boolean} has
  */
 
@@ -64,6 +67,14 @@ export function buildDependencyModel(nodes = [], edges = []) {
     cyclePath: (id) => {
       const group = cycleGroups.get(id)
       return group ? shortestCycleThrough(id, out, group) : null
+    },
+    // Whether the edge from -> to is itself part of a cycle, not just
+    // whether either endpoint happens to be in *some* cycle elsewhere in
+    // the graph - the orbital map's dashed-red edge styling needs the
+    // former (see mission-control/OrbitalMap.jsx).
+    edgeIsCircular: (from, to) => {
+      const group = cycleGroups.get(from)
+      return Boolean(group && group.has(to))
     },
   }
 }

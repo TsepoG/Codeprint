@@ -5,6 +5,6 @@ import App from '../src/App'
 describe('App', () => {
   it('renders without crashing', () => {
     render(<App />)
-    expect(screen.getByRole('heading', { name: 'Codeprint' })).toBeInTheDocument()
+    expect(screen.getByText('CODEPRINT')).toBeInTheDocument()
   })
 })

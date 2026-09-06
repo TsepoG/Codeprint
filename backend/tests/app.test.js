@@ -115,7 +115,7 @@ test('GET /api/scans/:id returns the full stored result', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.id, 'detail-test');
   assert.equal(res.body.commitSha, 'ccc');
-  assert.deepEqual(res.body.result, { ...result, findingsAvailable: true });
+  assert.deepEqual(res.body.result, { ...result, findingsAvailable: true, healthScore: null });
 });
 
 test('GET /api/scans/:id returns 404 for an unknown scan', async () => {

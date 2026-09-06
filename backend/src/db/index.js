@@ -62,6 +62,13 @@ if (!existingColumns.has('narrativeGapAnalysis')) {
 if (!existingColumns.has('findingsVersion')) {
   db.exec('ALTER TABLE scans ADD COLUMN findingsVersion INTEGER');
 }
+// Same story as findingsVersion above: NULL for a row predating health-score
+// capture (which, since it's computed from findings, is every row that
+// predates findingsVersion too) - getScanById reports that scan's score as
+// unavailable rather than a misleading 0.
+if (!existingColumns.has('healthScore')) {
+  db.exec('ALTER TABLE scans ADD COLUMN healthScore INTEGER');
+}
 
 /**
  * @typedef {object} ScanRecord
@@ -77,10 +84,11 @@ if (!existingColumns.has('findingsVersion')) {
 
 /**
  * `result` minus the parts stored in their own columns/tables instead:
- * `findings` (in `scan_findings` - see `insertScan`) and `findingsVersion`
- * (in this table's own column, re-attached as `findingsAvailable` by
- * `getScanById`/`toSummary`). Keeping them out of `resultJson` too means
- * there's exactly one copy of each, not one in the blob and one alongside it.
+ * `findings` (in `scan_findings` - see `insertScan`), `findingsVersion`
+ * (re-attached as `findingsAvailable` by `getScanById`/`toSummary`), and
+ * `healthScore` - all three in this table's own columns. Keeping them out
+ * of `resultJson` too means there's exactly one copy of each, not one in
+ * the blob and one alongside it.
  *
  * @param {unknown} result
  * @returns {unknown}
@@ -90,12 +98,13 @@ function withoutFindings(result) {
   const rest = { ...result };
   delete rest.findings;
   delete rest.findingsVersion;
+  delete rest.healthScore;
   return rest;
 }
 
 const insertScanRow = db.prepare(
-  `INSERT INTO scans (id, repoUrl, branch, commitSha, startedAt, completedAt, status, resultJson, narrativeSummary, narrativeGapAnalysis, findingsVersion)
-   VALUES (@id, @repoUrl, @branch, @commitSha, @startedAt, @completedAt, @status, @resultJson, @narrativeSummary, @narrativeGapAnalysis, @findingsVersion)`,
+  `INSERT INTO scans (id, repoUrl, branch, commitSha, startedAt, completedAt, status, resultJson, narrativeSummary, narrativeGapAnalysis, findingsVersion, healthScore)
+   VALUES (@id, @repoUrl, @branch, @commitSha, @startedAt, @completedAt, @status, @resultJson, @narrativeSummary, @narrativeGapAnalysis, @findingsVersion, @healthScore)`,
 );
 
 const insertFindingRow = db.prepare(
@@ -136,6 +145,7 @@ export const insertScan = db.transaction(
       narrativeSummary: narrative?.summary ?? null,
       narrativeGapAnalysis: narrative ? JSON.stringify(narrative.gapAnalysis) : null,
       findingsVersion: result?.findingsVersion ?? null,
+      healthScore: result?.healthScore ?? null,
     });
 
     findings.forEach((finding, seq) => {
@@ -290,6 +300,9 @@ export function getScanById(id) {
         // normalize.js) - an empty `findings` array alone can't tell "this
         // category is clean" apart from "this scan predates capture".
         findingsAvailable: Boolean(row.findingsVersion),
+        // Null for a scan predating health-score capture, rather than a
+        // misleading 0 - see healthScore.js and OverviewTab's HealthDial.
+        healthScore: row.healthScore,
       }
     : null;
 

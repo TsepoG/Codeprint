@@ -4,6 +4,7 @@ import { toPosixRelative } from './repoPath.js';
 // decides bug-vs-code-smell per message; the aggregate counters here have to
 // classify identically or the metrics and the findings array would disagree.
 import { extractFindings, isSonarRule, FINDINGS_VERSION } from './findings.js';
+import { computeHealthScore } from './healthScore.js';
 
 const COGNITIVE_COMPLEXITY_RE = /Cognitive Complexity from (\d+)/i;
 
@@ -25,6 +26,18 @@ function fileComplexity(messages) {
     if (match) max = Math.max(max, Number(match[1]));
   }
   return max > 0 ? max : sonarCount;
+}
+
+/**
+ * ESLint only includes `source` on a result that has at least one message -
+ * exactly the files this module keeps (see `normalizeEslint`) - so this only
+ * ever sees the text it needs.
+ *
+ * @param {string|undefined} source
+ * @returns {number}
+ */
+function countLines(source) {
+  return typeof source === 'string' && source !== '' ? source.split(/\r\n|\r|\n/).length : 0;
 }
 
 /**
@@ -72,6 +85,7 @@ function normalizeEslint(eslintResult, targetDir) {
         name: toPosixRelative(targetDir, fileResult.filePath),
         complexity: fileComplexity(messages),
         coverage: null,
+        loc: countLines(fileResult.source),
         severity: fileSeverity(fileResult),
       });
     }
@@ -371,6 +385,7 @@ function normalizeDependencyGraph(madgeResult) {
  *   files: object[],
  *   findings: import('./findings.js').Finding[],
  *   findingsVersion: number,
+ *   healthScore: number,
  *   dependencyGraph: {nodes: object[], edges: object[]},
  *   infrastructure: {detected: boolean, findings: object[], graph: {nodes: object[], edges: object[]}},
  *   warnings: string[],
@@ -416,12 +431,14 @@ export function normalizeScanResults({
     warnings.push(`${truncated} lower-severity findings omitted (kept the first ${findings.length})`);
   }
 
+  const duplicationPct = normalizeDuplicationPct(jscpdResult);
+
   return {
     metrics: {
       bugs,
       vulnerabilities: normalizeVulnerabilities(auditResult),
       codeSmells,
-      duplicationPct: normalizeDuplicationPct(jscpdResult),
+      duplicationPct,
     },
     files,
     findings,
@@ -430,6 +447,11 @@ export function normalizeScanResults({
     // db/index.js) is distinguishable from one that ran this code and found
     // nothing, rather than both looking like an empty `findings` array.
     findingsVersion: FINDINGS_VERSION,
+    // Computed from the findings/duplication/coverage above, not a separate
+    // signal - see healthScore.js. Absent (null, once persisted) under the
+    // exact same condition findingsVersion is: a scan whose findings were
+    // never extracted has no severity counts to score from.
+    healthScore: computeHealthScore({ findings, duplicationPct, files }),
     dependencyGraph: normalizeDependencyGraph(madgeResult),
     infrastructure,
     warnings,

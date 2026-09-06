@@ -1,3 +1,5 @@
+import HudFrame from '../mission-control/HudFrame.jsx'
+
 const WIDTH = 280
 const HEIGHT = 90
 const PADDING = 14
@@ -9,10 +11,12 @@ const PADDING = 14
 function TrendChart({ title, unit, points, color }) {
   if (points.length < 2) {
     return (
-      <div className="trend-chart blueprint-panel">
-        <div className="trend-chart-title">{title}</div>
-        <p className="empty-note">Not enough scans yet for a trend.</p>
-      </div>
+      <HudFrame>
+        <div style={{ padding: 14 }}>
+          <div className="mc-trend-title">{title}</div>
+          <p className="empty-note">Not enough scans yet for a trend.</p>
+        </div>
+      </HudFrame>
     )
   }
 
@@ -32,25 +36,27 @@ function TrendChart({ title, unit, points, color }) {
   const format = (value) => `${value.toFixed(1)}${unit}`
 
   return (
-    <div className="trend-chart blueprint-panel">
-      <div className="trend-chart-title">{title}</div>
-      <svg
-        className="trend-chart-svg"
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        role="img"
-        aria-label={`${title} across the last ${points.length} scans: from ${format(values[0])} to ${format(values[values.length - 1])}`}
-      >
-        <line x1={PADDING} y1={HEIGHT / 2} x2={WIDTH - PADDING} y2={HEIGHT / 2} className="trend-gridline" />
-        <path d={path} className="trend-line" style={{ stroke: color }} />
-        <circle cx={last.x} cy={last.y} r="3" style={{ fill: color }} />
-      </svg>
-      <div className="trend-chart-values">
-        <span>{format(values[0])}</span>
-        <span className="trend-chart-current" style={{ color }}>
-          {format(values[values.length - 1])}
-        </span>
+    <HudFrame>
+      <div style={{ padding: 14 }}>
+        <div className="mc-trend-title">{title}</div>
+        <svg
+          className="mc-trend-svg"
+          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          role="img"
+          aria-label={`${title} across the last ${points.length} scans: from ${format(values[0])} to ${format(values[values.length - 1])}`}
+        >
+          <line x1={PADDING} y1={HEIGHT / 2} x2={WIDTH - PADDING} y2={HEIGHT / 2} className="mc-trend-gridline" />
+          <path d={path} className="mc-trend-line" style={{ stroke: color }} />
+          <circle cx={last.x} cy={last.y} r="3" style={{ fill: color }} />
+        </svg>
+        <div className="mc-trend-values">
+          <span>{format(values[0])}</span>
+          <span className="mc-trend-current" style={{ color }}>
+            {format(values[values.length - 1])}
+          </span>
+        </div>
       </div>
-    </div>
+    </HudFrame>
   )
 }
 

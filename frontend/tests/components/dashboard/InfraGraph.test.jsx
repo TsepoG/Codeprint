@@ -14,10 +14,10 @@ describe('InfraGraph', () => {
       <InfraGraph nodes={[{ id: 'aws_s3_bucket.assets' }, { id: 'aws_instance.app' }]} edges={[]} />,
     )
 
-    expect(container.querySelectorAll('.infra-node rect')).toHaveLength(2)
+    expect(container.querySelectorAll('.mc-infra-node rect')).toHaveLength(2)
     // Queried directly rather than via getByTitle, which only matches an SVG
     // <title> that is a direct child of <svg> - these hang off each node's <g>.
-    const titles = [...container.querySelectorAll('.infra-node title')].map((t) => t.textContent)
+    const titles = [...container.querySelectorAll('.mc-infra-node title')].map((t) => t.textContent)
     expect(titles).toEqual(['aws_s3_bucket.assets', 'aws_instance.app'])
   })
 
@@ -29,7 +29,7 @@ describe('InfraGraph', () => {
       />,
     )
 
-    const traces = container.querySelectorAll('.infra-trace')
+    const traces = container.querySelectorAll('.mc-infra-trace')
     expect(traces).toHaveLength(1)
     // V/H commands only - a diagonal would need L or C.
     expect(traces[0].getAttribute('d')).toMatch(/^M [\d.]+ [\d.]+ V [\d.]+ H [\d.]+ V [\d.]+$/)
@@ -40,7 +40,7 @@ describe('InfraGraph', () => {
 
     expect(screen.getByText('envs/prod')).toBeInTheDocument()
     expect(screen.getByText('aws_s3_bucket.assets')).toBeInTheDocument()
-    expect(container.querySelector('.infra-node title').textContent).toBe('envs/prod/aws_s3_bucket.assets')
+    expect(container.querySelector('.mc-infra-node title').textContent).toBe('envs/prod/aws_s3_bucket.assets')
   })
 
   it('middle-truncates a long resource name so both ends stay readable', () => {
@@ -55,7 +55,7 @@ describe('InfraGraph', () => {
     const { container } = render(
       <InfraGraph nodes={[{ id: 'a' }]} edges={[{ from: 'a', to: 'missing' }]} />,
     )
-    expect(container.querySelectorAll('.infra-trace')).toHaveLength(0)
+    expect(container.querySelectorAll('.mc-infra-trace')).toHaveLength(0)
   })
 
   it('falls back to counts when there are too many resources to draw clearly', () => {
