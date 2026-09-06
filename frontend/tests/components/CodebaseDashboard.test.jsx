@@ -157,7 +157,7 @@ describe('CodebaseDashboard', () => {
       expect(screen.getByRole('button', { name: 'src/index.js' })).toBeInTheDocument()
 
       switchTab(/dependency map/i)
-      expect(screen.getByText(/1 files, 0 imports/i)).toBeInTheDocument()
+      expect(screen.getByText(/1 modules, 0 imports/i)).toBeInTheDocument()
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/scan'),

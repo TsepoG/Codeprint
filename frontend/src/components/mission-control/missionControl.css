@@ -243,3 +243,76 @@ table.mc-table {
   display: block;
   height: 100%;
 }
+
+/* Inline text-link control - a clickable module name in a table, or the
+   orbital map's "view as list" / "back to orbital" toggles. */
+.mc-link {
+  font: inherit;
+  font-family: 'Share Tech Mono', monospace;
+  color: var(--cyan);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.mc-link:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.mc-link:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* Orbital dependency map. See OrbitalMap.jsx and orbitalLayout.js. */
+.mc-node text {
+  font-family: 'Share Tech Mono', monospace;
+  fill: var(--ink-dim);
+}
+.mc-node.clickable {
+  cursor: pointer;
+}
+.mc-node.clickable:hover text,
+.mc-node.clickable:focus-visible text {
+  fill: var(--ink);
+}
+.mc-node.clickable:focus {
+  outline: none;
+}
+.mc-node.clickable:focus-visible circle:not(.mc-node-target),
+.mc-node.selected circle:not(.mc-node-target) {
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px var(--cyan));
+}
+.mc-node-target {
+  fill: transparent;
+}
+.mc-edge {
+  fill: none;
+  stroke: var(--cyan-dim);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+.mc-edge-circ {
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+  opacity: 0.8;
+}
+.mc-ring-guide {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.mc-axis {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9.5px;
+  fill: var(--ink-dim);
+}
+.mc-orbital-overflow {
+  text-align: center;
+  color: var(--ink-dim);
+  font-size: 12.5px;
+}

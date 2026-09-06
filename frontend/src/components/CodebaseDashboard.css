@@ -243,96 +243,6 @@
   border-bottom-color: var(--bp-accent);
 }
 
-/* auto-fit rather than a fixed 4: the row carries a fifth tile (infra
-   findings) only for repos that have Terraform. */
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.stat-tile {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 16px;
-  border-radius: 2px;
-}
-
-/* A tile that opens a detail panel. Reset the button defaults rather than
-   restyling, so it keeps the exact tile look and only gains the affordance. */
-.stat-tile-button {
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 120ms ease, background-color 120ms ease;
-}
-
-.stat-tile-button:hover {
-  border-color: var(--bp-line-strong);
-  background: var(--bp-surface-raised);
-}
-
-.stat-tile-button:focus-visible {
-  outline: 2px solid var(--bp-cyan);
-  outline-offset: 2px;
-}
-
-/* Opt-in: only tiles whose number carries a severity judgement get the
-   coloured edge (see StatTile's `severity` prop). */
-.stat-tile-good {
-  border-left: 3px solid var(--bp-good);
-}
-
-.stat-tile-warning {
-  border-left: 3px solid var(--bp-warning);
-}
-
-.stat-tile-critical {
-  border-left: 3px solid var(--bp-critical);
-}
-
-.stat-tile-label {
-  font-family: var(--bp-mono);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--bp-ink-dim);
-}
-
-.stat-tile-value {
-  font-family: var(--bp-mono);
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--bp-ink);
-}
-
-.meter-track {
-  height: 6px;
-  border-radius: 1px;
-  background: var(--bp-line);
-  overflow: hidden;
-  margin-top: 2px;
-}
-
-.meter-fill {
-  height: 100%;
-}
-
-.meter-fill.good {
-  background: var(--bp-good);
-}
-
-.meter-fill.warning {
-  background: var(--bp-warning);
-}
-
-.meter-fill.critical {
-  background: var(--bp-critical);
-}
-
 /* AI synthesis panel (Overview tab) - styled as a hand-annotated note on
    the drawing rather than another measured-data tile: dashed border and a
    small tab label, versus the solid corner-bracket treatment used for
@@ -507,23 +417,6 @@
 
 .severity-badge.critical .severity-dot {
   background: var(--bp-critical);
-}
-
-.dependency-graph {
-  width: 100%;
-  max-width: 320px;
-  height: auto;
-  display: block;
-  margin: 0 auto;
-}
-
-.graph-edge {
-  stroke: var(--bp-line-strong);
-  stroke-width: 1;
-}
-
-.graph-node circle {
-  fill: var(--bp-cyan);
 }
 
 /* Infrastructure graph: same schematic language as the dependency map, but
@@ -942,35 +835,6 @@
   margin-top: 10px;
 }
 
-/* Clickable dependency-graph nodes. */
-.graph-node-target {
-  fill: transparent;
-}
-
-.graph-node.clickable {
-  cursor: pointer;
-}
-
-.graph-node.clickable:hover circle:not(.graph-node-target),
-.graph-node.clickable:focus-visible circle:not(.graph-node-target) {
-  fill: var(--bp-accent);
-  r: 7;
-}
-
-.graph-node.clickable:focus {
-  outline: none;
-}
-
-.graph-node.clickable:focus-visible circle:not(.graph-node-target) {
-  stroke: var(--bp-cyan);
-  stroke-width: 2;
-}
-
-.graph-node.selected circle:not(.graph-node-target) {
-  fill: var(--bp-accent);
-  r: 7;
-}
-
 /* Module detail panel. */
 .module-cycle {
   margin-bottom: 16px;
@@ -1221,10 +1085,6 @@
 }
 
 @media (max-width: 640px) {
-  .kpi-row {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
   .trend-row {
     grid-template-columns: 1fr;
   }
