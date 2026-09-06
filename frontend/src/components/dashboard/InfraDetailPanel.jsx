@@ -77,9 +77,10 @@ function InfraFindingCard({ finding }) {
  * @param {object} props
  * @param {import('./infraResource.js').ResourceKey|null} props.resourceKey Null closes the panel.
  * @param {object[]} [props.findings] `infrastructure.findings`.
+ * @param {boolean} [props.findingsAvailable] Whether this scan ran per-finding extraction at all.
  * @param {() => void} props.onClose
  */
-function InfraDetailPanel({ resourceKey, findings = [], onClose }) {
+function InfraDetailPanel({ resourceKey, findings = [], findingsAvailable = true, onClose }) {
   if (!resourceKey) return null
 
   const matching = rankFindings(findingsForResource(findings, resourceKey))
@@ -100,8 +101,9 @@ function InfraDetailPanel({ resourceKey, findings = [], onClose }) {
 
         {matching.length === 0 ? (
           <p className="empty-note">
-            Neither checkov nor tfsec flagged this resource. It still appears in the graph because inframap
-            found it declared.
+            {findingsAvailable
+              ? 'Neither checkov nor tfsec flagged this resource. It still appears in the graph because inframap found it declared.'
+              : 'Findings are not available for this scan - it predates per-finding capture.'}
           </p>
         ) : (
           <>

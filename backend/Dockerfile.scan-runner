@@ -68,6 +68,14 @@ RUN npm ci --omit=dev --ignore-scripts \
 # the backend (Express app, routes, dockerRunner.js).
 COPY --chown=scanner:scanner src/services/scan ./src/services/scan
 
+# Fingerprints the copy above and bakes the result into the image. Before
+# every scan, dockerRunner.js recomputes this same hash from the host's own
+# checkout and compares it against this file (`docker exec ... cat`) - a
+# mismatch means this image predates a scan-pipeline change and the scan is
+# refused with a loud error instead of silently running stale code (the
+# exact failure mode this replaces: see the README).
+RUN node src/services/scan/buildHash.mjs src/services/scan > /app/.scan-image-hash
+
 USER scanner
 
 # The root filesystem is mounted read-only at runtime (see dockerRunner.js's

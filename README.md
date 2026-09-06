@@ -25,7 +25,14 @@ This is a monorepo with two packages:
    This bundles the whole scan toolchain, so the first build takes a few
    minutes and pulls roughly 700MB. Rebuild it whenever anything under
    `backend/src/services/scan/` changes: the container runs a copy of that
-   code, so a scan will silently keep using the old version until you do.
+   code, so an unrebuilt image would otherwise keep running the old
+   version. This is no longer a silent failure mode, though - before every
+   scan, `dockerRunner.js` fingerprints `backend/src/services/scan/` on the
+   host and compares it against the fingerprint baked into the image at
+   build time (`/app/.scan-image-hash` - see `Dockerfile.scan-runner` and
+   `imageHash.js`). A mismatch fails the scan immediately with a
+   `StaleScanImageError` telling you to rebuild, rather than proceeding
+   with stale code.
 
    | Tool | Installed as | Used for |
    | --- | --- | --- |
@@ -59,6 +66,8 @@ This is a monorepo with two packages:
 Every scan that reaches a terminal state (complete or failed) is written to a SQLite database (`better-sqlite3`, no separate DB server) at `DB_PATH` (default `backend/data/codeprint.db`, created automatically) - this is what survives a backend restart and what the frontend's History tab reads from. The live job store (`GET /api/scan/:jobId`) is separate and still in-memory/ephemeral, since it only needs to answer "is this specific run done yet" for as long as a client might be polling it.
 
 Alongside the summary `metrics` (bug/vulnerability/code-smell counts, duplication percentage), a completed scan's result carries `findings` - the individual problems those counts are counting, as one flat array covering every tool: eslint (`bug`/`codeSmell`), `npm audit` (`vulnerability`), jscpd (`duplication`), and checkov/tfsec (`infra`, also still available nested under `infrastructure.findings`). Each finding has a stable `id`, its `category`/`source`, `file`/`line`/`endLine` where applicable, a `severity` on the same high/medium/low scale used everywhere else, a `ruleId`, a `description`, and - captured from the clone while it still existed, before the scan container was torn down - a `snippet` (`{startLine, text}`) of the flagged code plus a few lines of context. A duplication finding also carries `duplicateOf`, the matched pair's own location and snippet. Findings with no meaningful file location (an npm advisory naming a dependency, not a place in the repo) simply have `file`/`line`/`snippet` all `null`.
+
+The result also carries `findingsAvailable` (and the underlying `findingsVersion` it's derived from) - `true` only if this scan actually ran per-finding extraction. This exists because an empty `findings` array is ambiguous on its own: it could mean "this category is genuinely clean" or "this scan predates per-finding capture" (persisted before the feature shipped, or run against a stale scan-runner image before the freshness check above existed). `db/index.js` persists `findingsVersion` as its own column - a scan row from before that column existed reads back as `null`/`findingsAvailable: false` with no separate backfill needed - and the frontend's detail panels and History tab both key off `findingsAvailable` to show "findings not available for this scan" rather than misreporting it as clean.
 
 A completed scan's normalized output is also sent to the Claude API to generate a short narrative - a plain-English health summary plus a bulleted gap analysis - attached as `result.narrative`. This step requires an `ANTHROPIC_API_KEY` (see `backend/.env.example`); without one (or if the API call fails/times out), the scan still completes normally, it just has no `narrative`.
 

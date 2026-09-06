@@ -33,3 +33,19 @@ export class RepoTooLargeError extends Error {
     this.name = 'RepoTooLargeError';
   }
 }
+
+/**
+ * Thrown when the scan-runner image's baked-in copy of `src/services/scan`
+ * (see `Dockerfile.scan-runner`) no longer matches the code on disk - i.e.
+ * the image is stale and hasn't been rebuilt since a scan-pipeline change.
+ * Without this check a stale image runs silently, producing results (or
+ * missing findings) from whatever old code it happened to bundle - see
+ * `dockerRunner.js`'s pre-flight freshness check.
+ */
+export class StaleScanImageError extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'StaleScanImageError';
+  }
+}

@@ -16,18 +16,6 @@ const STATUS_MESSAGES = {
   running: 'Cloning and analyzing the repository - this can take a few minutes…',
 }
 
-// Which metric tile's count backs each findings category, so an empty panel
-// can tell "nothing found" apart from "this scan predates findings".
-const CATEGORY_METRIC = {
-  bug: (result) => result.metrics?.bugs,
-  vulnerability: (result) => result.metrics?.vulnerabilities,
-  codeSmell: (result) => result.metrics?.codeSmells,
-  infra: (result) => result.infrastructure?.findings?.length,
-  // Duplication's tile is a percentage, not a count of anything, so there's
-  // no expected number of findings to reconcile against.
-  duplication: () => 0,
-}
-
 // Infrastructure is conditional: it only appears for repos that actually
 // contain Terraform (and is absent from scans recorded before infra
 // scanning existed, which have no `infrastructure` at all).
@@ -280,6 +268,7 @@ function CodebaseDashboard() {
               dependencyGraph={result.dependencyGraph}
               files={result.files}
               findings={result.findings}
+              findingsAvailable={result.findingsAvailable}
               model={dependencyModel}
             />
           )}
@@ -288,6 +277,7 @@ function CodebaseDashboard() {
               files={result.files}
               highlightFile={highlightFile}
               findings={result.findings}
+              findingsAvailable={result.findingsAvailable}
               model={dependencyModel}
             />
           )}
@@ -296,6 +286,7 @@ function CodebaseDashboard() {
               infrastructure={result.infrastructure}
               warnings={result.warnings}
               highlightFile={highlightFile}
+              findingsAvailable={result.findingsAvailable}
             />
           )}
           {currentTab === 'history' && (
@@ -305,7 +296,7 @@ function CodebaseDashboard() {
           <FindingsPanel
             category={openCategory}
             findings={result.findings}
-            expectedCount={openCategory ? CATEGORY_METRIC[openCategory]?.(result) : undefined}
+            findingsAvailable={result.findingsAvailable}
             canViewInContext={canViewInContext}
             onViewInContext={handleViewInContext}
             onClose={() => setOpenCategory(null)}

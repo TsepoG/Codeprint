@@ -2,7 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { runScan, isValidRepoUrl } from '../services/scan/dockerRunner.js';
 import { synthesizeNarrative } from '../services/scan/synthesis.js';
-import { ScanTimeoutError, CloneError, RepoTooLargeError } from '../services/scan/errors.js';
+import { ScanTimeoutError, CloneError, RepoTooLargeError, StaleScanImageError } from '../services/scan/errors.js';
 import { createJob, getJob, markJobRunning, completeJob, failJob } from '../services/scan/jobStore.js';
 import { insertScan } from '../db/index.js';
 
@@ -64,6 +64,12 @@ router.post('/scan', scanLimiter, (req, res) => {
       // scan; it just means `result.narrative` stays undefined.
       const narrative = await synthesizeNarrative(result);
       if (narrative) result.narrative = narrative;
+      // Set whenever `normalizeScanResults` actually ran (see
+      // `services/scan/normalize.js`) - lets the frontend and `GET
+      // /api/scans/:id` tell "this category is genuinely clean" apart from
+      // "this scan predates per-finding extraction", which an empty
+      // `findings` array alone can't distinguish.
+      result.findingsAvailable = Boolean(result.findingsVersion);
 
       completeJob(job.id, result);
       insertScan({
@@ -130,6 +136,7 @@ function describeFailure(err) {
   if (err instanceof ScanTimeoutError) return 'Scan timed out';
   if (err instanceof RepoTooLargeError) return `Repository too large to scan: ${err.message}`;
   if (err instanceof CloneError) return `Could not clone repository: ${err.message}`;
+  if (err instanceof StaleScanImageError) return err.message;
   console.error('Unexpected scan failure:', err);
   return 'Failed to scan repository';
 }

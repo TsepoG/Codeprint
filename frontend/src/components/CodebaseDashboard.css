@@ -416,6 +416,15 @@
   color: var(--bp-ink-dim);
 }
 
+.findings-availability {
+  font-size: 12px;
+  color: var(--bp-ink-dim);
+}
+
+.findings-unavailable {
+  font-style: italic;
+}
+
 .table-scroll {
   overflow-x: auto;
 }

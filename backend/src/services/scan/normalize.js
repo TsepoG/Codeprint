@@ -3,7 +3,7 @@ import { toPosixRelative } from './repoPath.js';
 // `isSonarRule` lives with the finding extraction because that's what
 // decides bug-vs-code-smell per message; the aggregate counters here have to
 // classify identically or the metrics and the findings array would disagree.
-import { extractFindings, isSonarRule } from './findings.js';
+import { extractFindings, isSonarRule, FINDINGS_VERSION } from './findings.js';
 
 const COGNITIVE_COMPLEXITY_RE = /Cognitive Complexity from (\d+)/i;
 
@@ -370,6 +370,7 @@ function normalizeDependencyGraph(madgeResult) {
  *   metrics: {bugs: number, vulnerabilities: number, codeSmells: number, duplicationPct: number},
  *   files: object[],
  *   findings: import('./findings.js').Finding[],
+ *   findingsVersion: number,
  *   dependencyGraph: {nodes: object[], edges: object[]},
  *   infrastructure: {detected: boolean, findings: object[], graph: {nodes: object[], edges: object[]}},
  *   warnings: string[],
@@ -424,6 +425,11 @@ export function normalizeScanResults({
     },
     files,
     findings,
+    // Stamped every time this function runs, so a scan that predates
+    // per-finding extraction (no column value at all, once persisted - see
+    // db/index.js) is distinguishable from one that ran this code and found
+    // nothing, rather than both looking like an empty `findings` array.
+    findingsVersion: FINDINGS_VERSION,
     dependencyGraph: normalizeDependencyGraph(madgeResult),
     infrastructure,
     warnings,

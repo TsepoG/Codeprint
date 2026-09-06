@@ -225,6 +225,14 @@ describe('InfrastructureTab', () => {
       expect(screen.getByText(/neither checkov nor tfsec flagged this resource/i)).toBeInTheDocument()
     })
 
+    it('says findings are unavailable, rather than "not flagged", for a scan that predates extraction', () => {
+      render(<InfrastructureTab infrastructure={DETECTED} findingsAvailable={false} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'infra/aws_instance.app - view resource' }))
+
+      expect(screen.getByText(/predates per-finding capture/i)).toBeInTheDocument()
+    })
+
     it('closes again, leaving the tab in place', () => {
       render(<InfrastructureTab infrastructure={DETECTED} />)
       fireEvent.click(screen.getByRole('button', { name: 'infra/aws_s3_bucket.assets - view resource' }))

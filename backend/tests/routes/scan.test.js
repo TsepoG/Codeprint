@@ -1,8 +1,10 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import app from '../../src/app.js';
 import { childProcess } from '../../src/services/scan/runTool.js';
+import { computeSourceHash } from '../../src/services/scan/imageHash.js';
 
 // End-to-end coverage of the actual background job lifecycle a real
 // POST /api/scan drives (job created -> runScan -> completeJob/failJob ->
@@ -15,6 +17,10 @@ import { childProcess } from '../../src/services/scan/runTool.js';
 // check (which otherwise calls the real GitHub API) resolves instantly.
 
 const REPO_URL = 'https://github.com/owner/repo';
+// What dockerRunner.js's pre-flight freshness check computes from the real
+// checkout on disk before every scan - matching it here (rather than a
+// hardcoded string) keeps this test correct as the scan pipeline changes.
+const FRESH_HASH = computeSourceHash(fileURLToPath(new URL('../../src/services/scan', import.meta.url)));
 
 const CLONE_OK = {
   ok: true,
@@ -25,6 +31,7 @@ const ANALYZE_OK = {
   result: {
     metrics: { bugs: 1, vulnerabilities: 0, codeSmells: 0, duplicationPct: 0 },
     files: [{ name: 'src/index.js', complexity: 3, coverage: null, severity: 'low' }],
+    findingsVersion: 1,
     findings: [
       {
         id: 'a1b2c3d4e5f60718',
@@ -58,12 +65,16 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
-/** @param {{cloneResult?: object, analyzeResult?: object}} [opts] */
-function mockDocker({ cloneResult = CLONE_OK, analyzeResult = ANALYZE_OK } = {}) {
+/** @param {{cloneResult?: object, analyzeResult?: object, imageHash?: string|null}} [opts] */
+function mockDocker({ cloneResult = CLONE_OK, analyzeResult = ANALYZE_OK, imageHash = FRESH_HASH } = {}) {
   childProcess.execFile = (command, args, options, callback) => {
     const [sub] = args;
     if (sub === 'run') return callback(null, 'fake-container-id\n', '');
     if (sub === 'exec') {
+      if (args.includes('cat')) {
+        if (imageHash === null) return callback(new Error('cat: No such file or directory'), '', 'not found');
+        return callback(null, imageHash, '');
+      }
       const isClonePhase = args.some((a) => typeof a === 'string' && a.includes('clonePhase.js'));
       return callback(null, JSON.stringify(isClonePhase ? cloneResult : analyzeResult), '');
     }
@@ -101,14 +112,24 @@ test('a successful scan: POST returns 202 immediately, the job completes, and th
 
   const finalRes = await waitForTerminalStatus(jobId);
   assert.equal(finalRes.body.status, 'complete');
-  assert.deepEqual(finalRes.body.result, { ...ANALYZE_OK.result, branch: 'main', commitSha: 'deadbeef' });
+  assert.deepEqual(finalRes.body.result, {
+    ...ANALYZE_OK.result,
+    branch: 'main',
+    commitSha: 'deadbeef',
+    findingsAvailable: true,
+  });
 
   const detailRes = await request(app).get(`/api/scans/${jobId}`);
   assert.equal(detailRes.status, 200);
   assert.equal(detailRes.body.status, 'complete');
   assert.equal(detailRes.body.branch, 'main');
   assert.equal(detailRes.body.commitSha, 'deadbeef');
-  assert.deepEqual(detailRes.body.result, { ...ANALYZE_OK.result, branch: 'main', commitSha: 'deadbeef' });
+  assert.deepEqual(detailRes.body.result, {
+    ...ANALYZE_OK.result,
+    branch: 'main',
+    commitSha: 'deadbeef',
+    findingsAvailable: true,
+  });
 
   const listRes = await request(app).get('/api/scans').query({ repoUrl: REPO_URL });
   assert.ok(listRes.body.scans.some((scan) => scan.id === jobId));
@@ -123,6 +144,22 @@ test('a failing scan: the job fails with a user-facing message and is persisted 
   const finalRes = await waitForTerminalStatus(jobId);
   assert.equal(finalRes.body.status, 'failed');
   assert.match(finalRes.body.error, /Could not clone repository: git clone failed: repository not found/);
+
+  const detailRes = await request(app).get(`/api/scans/${jobId}`);
+  assert.equal(detailRes.body.status, 'failed');
+  assert.equal(detailRes.body.result, null);
+});
+
+test('a scan against a stale image fails loudly instead of succeeding with empty findings', async () => {
+  mockDocker({ imageHash: 'a'.repeat(64) });
+
+  const postRes = await request(app).post('/api/scan').send({ repoUrl: REPO_URL });
+  const { jobId } = postRes.body;
+
+  const finalRes = await waitForTerminalStatus(jobId);
+  assert.equal(finalRes.body.status, 'failed');
+  assert.match(finalRes.body.error, /is stale/i);
+  assert.match(finalRes.body.error, /rebuild/i);
 
   const detailRes = await request(app).get(`/api/scans/${jobId}`);
   assert.equal(detailRes.body.status, 'failed');

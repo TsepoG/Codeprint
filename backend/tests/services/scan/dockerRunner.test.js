@@ -1,10 +1,16 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 import { childProcess } from '../../../src/services/scan/runTool.js';
 import { runScan } from '../../../src/services/scan/dockerRunner.js';
-import { CloneError, RepoTooLargeError, ScanTimeoutError } from '../../../src/services/scan/errors.js';
+import { computeSourceHash } from '../../../src/services/scan/imageHash.js';
+import { CloneError, RepoTooLargeError, ScanTimeoutError, StaleScanImageError } from '../../../src/services/scan/errors.js';
 
 const REPO_URL = 'https://github.com/owner/repo';
+// What dockerRunner.js itself computes from the real checkout on disk before
+// every scan - matching it here (rather than a hardcoded string) means these
+// tests stay correct as the scan pipeline's source keeps changing.
+const FRESH_HASH = computeSourceHash(fileURLToPath(new URL('../../../src/services/scan', import.meta.url)));
 
 const CLONE_OK = { ok: true, result: { auditResult: { ok: true, audit: { metadata: { vulnerabilities: { total: 0 } } } }, branch: 'main', commitSha: 'abc123' } };
 const ANALYZE_OK = {
@@ -48,8 +54,18 @@ afterEach(() => {
  * @param {object} [opts.analyzeResult] Parsed JSON `analyzePhase.js` "wrote to stdout".
  * @param {boolean} [opts.runFails]
  * @param {boolean} [opts.networkDisconnectFails]
+ * @param {string|null} [opts.imageHash] What `cat /app/.scan-image-hash`
+ *   answers - defaults to the real current hash so the freshness check
+ *   passes unless a test deliberately makes it stale. `null` simulates an
+ *   image built before that file existed at all (the file isn't there).
  */
-function mockDocker({ cloneResult = CLONE_OK, analyzeResult = ANALYZE_OK, runFails = false, networkDisconnectFails = false } = {}) {
+function mockDocker({
+  cloneResult = CLONE_OK,
+  analyzeResult = ANALYZE_OK,
+  runFails = false,
+  networkDisconnectFails = false,
+  imageHash = FRESH_HASH,
+} = {}) {
   childProcess.execFile = (command, args, options, callback) => {
     calls.push(args);
     assert.equal(command, 'docker');
@@ -60,6 +76,10 @@ function mockDocker({ cloneResult = CLONE_OK, analyzeResult = ANALYZE_OK, runFai
       return callback(null, 'fake-container-id\n', '');
     }
     if (sub === 'exec') {
+      if (args.includes('cat')) {
+        if (imageHash === null) return callback(new Error('cat: No such file or directory'), '', 'not found');
+        return callback(null, imageHash, '');
+      }
       const isClonePhase = args.some((a) => typeof a === 'string' && a.includes('clonePhase.js'));
       return callback(null, JSON.stringify(isClonePhase ? cloneResult : analyzeResult), '');
     }
@@ -148,6 +168,32 @@ test('runScan rejects when disconnecting the network fails, and still stops the 
 
 test('runScan still stops the container when the clone phase fails', async () => {
   mockDocker({ cloneResult: { ok: false, error: 'CloneError', message: 'nope' } });
+
+  await assert.rejects(runScan(REPO_URL));
+  assert.ok(calls.some((args) => args[0] === 'stop'));
+});
+
+test('runScan rejects with StaleScanImageError when the image hash does not match the current source, and never clones', async () => {
+  mockDocker({ imageHash: 'a'.repeat(64) });
+
+  await assert.rejects(runScan(REPO_URL), (err) => {
+    assert.ok(err instanceof StaleScanImageError);
+    assert.match(err.message, /is stale/i);
+    return true;
+  });
+
+  assert.ok(!calls.some((args) => args.some((a) => typeof a === 'string' && a.includes('clonePhase.js'))));
+  assert.ok(!calls.some((args) => args.some((a) => typeof a === 'string' && a.includes('analyzePhase.js'))));
+});
+
+test('runScan rejects with StaleScanImageError when the image predates the freshness check entirely', () => {
+  mockDocker({ imageHash: null });
+
+  return assert.rejects(runScan(REPO_URL), (err) => err instanceof StaleScanImageError);
+});
+
+test('runScan still stops the container after a stale-image rejection', async () => {
+  mockDocker({ imageHash: null });
 
   await assert.rejects(runScan(REPO_URL));
   assert.ok(calls.some((args) => args[0] === 'stop'));

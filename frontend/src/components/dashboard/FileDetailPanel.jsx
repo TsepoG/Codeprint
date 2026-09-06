@@ -98,10 +98,13 @@ function ModuleList({ title, modules, emptyMessage, onSelect }) {
  *   the dependency sections are left out rather than claiming zero imports.
  * @param {object[]} [props.files] The scan's `files` array, for the stats row.
  * @param {object[]} [props.findings] The scan's whole `findings` array.
+ * @param {boolean} [props.findingsAvailable] Whether this scan ran per-finding
+ *   extraction at all - false means an empty findings list here says nothing
+ *   about whether the file is actually clean.
  * @param {(id: string) => void} [props.onSelectModule] Re-aims the panel at another file.
  * @param {() => void} props.onClose
  */
-function FileDetailPanel({ moduleId, model, files = [], findings = [], onSelectModule, onClose }) {
+function FileDetailPanel({ moduleId, model, files = [], findings = [], findingsAvailable = true, onSelectModule, onClose }) {
   if (!moduleId) return null
 
   const file = files.find((entry) => entry.name === moduleId)
@@ -193,7 +196,11 @@ function FileDetailPanel({ moduleId, model, files = [], findings = [], onSelectM
         </h3>
 
         {moduleFindings.length === 0 ? (
-          <p className="empty-note">No findings recorded against this file.</p>
+          <p className="empty-note">
+            {findingsAvailable
+              ? 'No findings recorded against this file.'
+              : 'Findings are not available for this scan - it predates per-finding capture.'}
+          </p>
         ) : (
           <ul className="findings-list">
             {moduleFindings.map((finding) => (

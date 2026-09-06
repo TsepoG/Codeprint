@@ -486,14 +486,28 @@ describe('CodebaseDashboard', () => {
     it(
       'shows a clear empty state for a category with nothing in it, rather than a blank panel',
       async () => {
-        await completeScan()
+        // metrics.codeSmells is 5, but this result carries no code-smell
+        // findings and is explicitly marked findingsAvailable: false - the
+        // "scan predates capture" case, not "this category is clean".
+        await completeScan({ ...SCAN_RESULT, findingsAvailable: false })
 
         openTile(/code smells - view findings/i)
 
         const panel = await screen.findByRole('dialog')
-        // metrics.codeSmells is 5, but this result carries no code-smell
-        // findings - so this is the "scan predates capture" case, not "clean".
-        expect(within(panel).getByText(/predates their capture/i)).toBeInTheDocument()
+        expect(within(panel).getByText(/predates per-finding capture/i)).toBeInTheDocument()
+      },
+      15000,
+    )
+
+    it(
+      'shows a plain "no issues" empty state for a genuinely clean category',
+      async () => {
+        await completeScan({ ...SCAN_RESULT, findingsAvailable: true })
+
+        openTile(/code smells - view findings/i)
+
+        const panel = await screen.findByRole('dialog')
+        expect(within(panel).getByText(/no issues found in this category/i)).toBeInTheDocument()
       },
       15000,
     )

@@ -24,8 +24,9 @@ function infraWarnings(warnings = []) {
  * @param {string[]} [props.warnings]
  * @param {string|null} [props.highlightFile] Set when the user got here via
  *   "view in context" from an infra finding.
+ * @param {boolean} [props.findingsAvailable] Whether this scan ran per-finding extraction at all.
  */
-function InfrastructureTab({ infrastructure, warnings = [], highlightFile }) {
+function InfrastructureTab({ infrastructure, warnings = [], highlightFile, findingsAvailable = true }) {
   const highlightRef = useScrollIntoView(highlightFile)
   // A graph node and a findings row name the same resource two different
   // ways, so the selection is held as the reduced key both reduce to.
@@ -156,6 +157,7 @@ function InfrastructureTab({ infrastructure, warnings = [], highlightFile }) {
       <InfraDetailPanel
         resourceKey={selectedResource}
         findings={findings}
+        findingsAvailable={findingsAvailable}
         onClose={() => setSelectedResource(null)}
       />
     </div>

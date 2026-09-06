@@ -99,7 +99,7 @@ test('GET /api/scans lists persisted scans for a repo, most recent first', async
 });
 
 test('GET /api/scans/:id returns the full stored result', async () => {
-  const result = { metrics: { bugs: 3, vulnerabilities: 1, codeSmells: 2, duplicationPct: 10 }, files: [], findings: [], dependencyGraph: { nodes: [], edges: [] }, warnings: [] };
+  const result = { metrics: { bugs: 3, vulnerabilities: 1, codeSmells: 2, duplicationPct: 10 }, files: [], findings: [], findingsVersion: 1, dependencyGraph: { nodes: [], edges: [] }, warnings: [] };
   insertScan({
     id: 'detail-test',
     repoUrl: 'https://github.com/owner/detail-test',
@@ -115,7 +115,7 @@ test('GET /api/scans/:id returns the full stored result', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.id, 'detail-test');
   assert.equal(res.body.commitSha, 'ccc');
-  assert.deepEqual(res.body.result, result);
+  assert.deepEqual(res.body.result, { ...result, findingsAvailable: true });
 });
 
 test('GET /api/scans/:id returns 404 for an unknown scan', async () => {

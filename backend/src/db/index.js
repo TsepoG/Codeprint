@@ -55,6 +55,13 @@ if (!existingColumns.has('narrativeSummary')) {
 if (!existingColumns.has('narrativeGapAnalysis')) {
   db.exec('ALTER TABLE scans ADD COLUMN narrativeGapAnalysis TEXT');
 }
+// NULL for every row inserted before this column existed - which is exactly
+// the right value for them: they predate per-finding extraction entirely,
+// so `findingsAvailable` (see `getScanById`/`toSummary`) correctly reports
+// false with no separate backfill needed.
+if (!existingColumns.has('findingsVersion')) {
+  db.exec('ALTER TABLE scans ADD COLUMN findingsVersion INTEGER');
+}
 
 /**
  * @typedef {object} ScanRecord
@@ -69,23 +76,26 @@ if (!existingColumns.has('narrativeGapAnalysis')) {
  */
 
 /**
- * `result` minus its `findings` array, which is stored in `scan_findings`
- * instead - keeping it out of `resultJson` too means there's exactly one
- * copy of each finding, not one in the blob and one in its own row.
+ * `result` minus the parts stored in their own columns/tables instead:
+ * `findings` (in `scan_findings` - see `insertScan`) and `findingsVersion`
+ * (in this table's own column, re-attached as `findingsAvailable` by
+ * `getScanById`/`toSummary`). Keeping them out of `resultJson` too means
+ * there's exactly one copy of each, not one in the blob and one alongside it.
  *
  * @param {unknown} result
  * @returns {unknown}
  */
 function withoutFindings(result) {
-  if (!result || !Array.isArray(result.findings)) return result ?? null;
+  if (!result) return null;
   const rest = { ...result };
   delete rest.findings;
+  delete rest.findingsVersion;
   return rest;
 }
 
 const insertScanRow = db.prepare(
-  `INSERT INTO scans (id, repoUrl, branch, commitSha, startedAt, completedAt, status, resultJson, narrativeSummary, narrativeGapAnalysis)
-   VALUES (@id, @repoUrl, @branch, @commitSha, @startedAt, @completedAt, @status, @resultJson, @narrativeSummary, @narrativeGapAnalysis)`,
+  `INSERT INTO scans (id, repoUrl, branch, commitSha, startedAt, completedAt, status, resultJson, narrativeSummary, narrativeGapAnalysis, findingsVersion)
+   VALUES (@id, @repoUrl, @branch, @commitSha, @startedAt, @completedAt, @status, @resultJson, @narrativeSummary, @narrativeGapAnalysis, @findingsVersion)`,
 );
 
 const insertFindingRow = db.prepare(
@@ -125,6 +135,7 @@ export const insertScan = db.transaction(
       resultJson: resultWithoutFindings ? JSON.stringify(resultWithoutFindings) : null,
       narrativeSummary: narrative?.summary ?? null,
       narrativeGapAnalysis: narrative ? JSON.stringify(narrative.gapAnalysis) : null,
+      findingsVersion: result?.findingsVersion ?? null,
     });
 
     findings.forEach((finding, seq) => {
@@ -235,6 +246,8 @@ function withNarrative(row, result) {
  * @property {'complete'|'failed'} status
  * @property {object|null} metrics The stored scan's `metrics` (null for a failed scan).
  * @property {number|null} avgComplexity Mean of `files[].complexity` (null for a failed scan, or one with no flagged files).
+ * @property {boolean} findingsAvailable Whether this scan ran per-finding extraction at all - false for a
+ *   scan recorded before that feature existed, regardless of what its metrics say.
  */
 
 /**
@@ -268,7 +281,17 @@ export function getScanById(id) {
   if (!row) return null;
 
   const stored = row.resultJson ? JSON.parse(row.resultJson) : null;
-  const result = stored ? { ...withNarrative(row, stored), findings: findingsFor(row.id) } : null;
+  const result = stored
+    ? {
+        ...withNarrative(row, stored),
+        findings: findingsFor(row.id),
+        findingsVersion: row.findingsVersion,
+        // True only if this scan actually ran finding extraction (see
+        // normalize.js) - an empty `findings` array alone can't tell "this
+        // category is clean" apart from "this scan predates capture".
+        findingsAvailable: Boolean(row.findingsVersion),
+      }
+    : null;
 
   return {
     id: row.id,
@@ -302,5 +325,9 @@ function toSummary(row) {
     avgComplexity: files.length
       ? files.reduce((sum, file) => sum + (file.complexity || 0), 0) / files.length
       : null,
+    // Lets the History view label a scan recorded before per-finding
+    // extraction existed, rather than have it silently look identical to a
+    // genuinely clean one.
+    findingsAvailable: Boolean(row.findingsVersion),
   };
 }

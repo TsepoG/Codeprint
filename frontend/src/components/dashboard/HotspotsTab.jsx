@@ -10,10 +10,11 @@ const SEVERITY_RANK = { high: 0, medium: 1, low: 2 }
  * @param {string|null} [props.highlightFile] Set when the user got here via
  *   "view in context" from a finding.
  * @param {object[]} [props.findings] The scan's `findings` array.
+ * @param {boolean} [props.findingsAvailable] Whether this scan ran per-finding extraction at all.
  * @param {import('./dependencyModel.js').DependencyModel} [props.model] The
  *   import graph, so a file's panel here says the same as on the map.
  */
-function HotspotsTab({ files, highlightFile, findings = [], model }) {
+function HotspotsTab({ files, highlightFile, findings = [], findingsAvailable = true, model }) {
   const [selectedFile, setSelectedFile] = useState(null)
 
   const ranked = [...files].sort((a, b) => {
@@ -39,6 +40,7 @@ function HotspotsTab({ files, highlightFile, findings = [], model }) {
         model={model}
         files={files}
         findings={findings}
+        findingsAvailable={findingsAvailable}
         onSelectModule={setSelectedFile}
         onClose={() => setSelectedFile(null)}
       />

@@ -9,6 +9,7 @@ const SCAN_RESULT = {
     { name: 'b.js', complexity: 8, coverage: null, severity: 'high' },
   ],
   findings: [],
+  findingsVersion: 1,
   dependencyGraph: { nodes: [], edges: [] },
   warnings: [],
 };
@@ -31,7 +32,7 @@ test('insertScan + getScanById round-trips a complete scan', () => {
   assert.equal(scan.branch, 'main');
   assert.equal(scan.commitSha, 'abc123');
   assert.equal(scan.status, 'complete');
-  assert.deepEqual(scan.result, SCAN_RESULT);
+  assert.deepEqual(scan.result, { ...SCAN_RESULT, findingsAvailable: true });
 });
 
 test('insertScan stores a failed scan with a null result', () => {
@@ -138,6 +139,24 @@ test('listScans summaries include metrics and avgComplexity, without the full fi
   assert.deepEqual(scans[0].metrics, SCAN_RESULT.metrics);
   assert.equal(scans[0].avgComplexity, 6); // mean of 4 and 8
   assert.equal(scans[0].files, undefined);
+  assert.equal(scans[0].findingsAvailable, true);
+});
+
+test('listScans reports findingsAvailable: false for a scan predating per-finding extraction', () => {
+  const { findingsVersion, ...legacyResult } = SCAN_RESULT;
+  insertScan({
+    id: 'summary-legacy',
+    repoUrl: 'https://github.com/owner/summary-legacy',
+    branch: 'main',
+    commitSha: 'c',
+    startedAt: 100,
+    completedAt: 100,
+    status: 'complete',
+    result: legacyResult,
+  });
+
+  const { scans } = listScans({ repoUrl: 'https://github.com/owner/summary-legacy' });
+  assert.equal(scans[0].findingsAvailable, false);
 });
 
 test('findings round-trip through their own table, in their original order', () => {
@@ -192,6 +211,41 @@ test('a scan with no findings round-trips with an empty findings array', () => {
   });
 
   assert.deepEqual(getScanById('scan-no-findings').result.findings, []);
+});
+
+test('a scan predating per-finding extraction (no findingsVersion) reports findingsAvailable: false', () => {
+  const { findingsVersion, ...legacyResult } = SCAN_RESULT;
+  insertScan({
+    id: 'scan-legacy',
+    repoUrl: 'https://github.com/owner/repo',
+    branch: 'main',
+    commitSha: 'abc123',
+    startedAt: 1000,
+    completedAt: 2000,
+    status: 'complete',
+    result: legacyResult,
+  });
+
+  const scan = getScanById('scan-legacy');
+  assert.equal(scan.result.findingsAvailable, false);
+  assert.equal(scan.result.findingsVersion, null);
+});
+
+test('a scan that ran extraction reports findingsAvailable: true even with zero findings', () => {
+  insertScan({
+    id: 'scan-clean',
+    repoUrl: 'https://github.com/owner/repo',
+    branch: 'main',
+    commitSha: 'abc123',
+    startedAt: 1000,
+    completedAt: 2000,
+    status: 'complete',
+    result: SCAN_RESULT,
+  });
+
+  const scan = getScanById('scan-clean');
+  assert.equal(scan.result.findingsAvailable, true);
+  assert.deepEqual(scan.result.findings, []);
 });
 
 test('listScans reports a null avgComplexity for a failed scan', () => {

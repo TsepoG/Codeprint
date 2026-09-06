@@ -1,12 +1,20 @@
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { isValidRepoUrl } from './clone.js';
 import { runCommand } from './runTool.js';
 import { checkRepoSizeWithinLimit } from './repoSizeCheck.js';
-import { ScanTimeoutError, CloneError, RepoTooLargeError } from './errors.js';
+import { computeSourceHash } from './imageHash.js';
+import { ScanTimeoutError, CloneError, RepoTooLargeError, StaleScanImageError } from './errors.js';
 
 export { isValidRepoUrl };
 
 const SCAN_IMAGE = process.env.SCAN_IMAGE || 'codeprint-scan-runner:latest';
+// This file's own directory - exactly `src/services/scan` - is what
+// `Dockerfile.scan-runner` copies into the image and fingerprints (see
+// buildHash.mjs), so hashing it here compares like with like.
+const SCAN_SOURCE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const IMAGE_HASH_PATH = '/app/.scan-image-hash';
 // Hard wall-clock ceiling across the whole scan - the host force-stops the
 // container if this fires, regardless of what its own internal per-tool
 // timeouts are doing.
@@ -64,6 +72,9 @@ const ERROR_CLASSES = { CloneError, ScanTimeoutError, RepoTooLargeError };
  * @throws {CloneError} If the clone fails.
  * @throws {RepoTooLargeError} If the repo exceeds the configured size cap.
  * @throws {ScanTimeoutError} If the scan (or the host-side wait on it) times out.
+ * @throws {StaleScanImageError} If the image's baked-in copy of
+ *   `src/services/scan` no longer matches the code on disk - see
+ *   {@link checkImageFreshness}. Raised before either phase runs.
  * @throws {Error} For any other container/docker-level failure (e.g. docker
  *   isn't installed, or the scan-runner image hasn't been built).
  */
@@ -85,6 +96,7 @@ export async function runScan(repoUrl) {
 
   try {
     await startContainer(containerName, controller.signal);
+    await checkImageFreshness(containerName, controller.signal);
 
     const clonePayload = await execInContainer({
       containerName,
@@ -175,6 +187,35 @@ async function startContainer(name, signal) {
   const { error, stderr } = await runCommand('docker', args, { signal });
   if (error) {
     throw new Error(`failed to start scan container: ${stderr?.trim() || error.message}`);
+  }
+}
+
+/**
+ * Refuses to run a scan against a container whose baked-in copy of
+ * `src/services/scan` (see `Dockerfile.scan-runner`) no longer matches the
+ * code on disk right now. The image bundles this directory at build time
+ * and nothing rebuilds it automatically, so without this check an
+ * unrebuilt image silently keeps running whatever scan logic it was built
+ * with - previously discovered the hard way, when a whole findings-
+ * extraction feature shipped in source while every real scan kept running
+ * a three-hour-stale image that predated it, and the API just returned an
+ * empty `findings` array with no indication anything was wrong.
+ *
+ * @param {string} containerName
+ * @param {AbortSignal} signal
+ * @returns {Promise<void>}
+ * @throws {StaleScanImageError}
+ */
+async function checkImageFreshness(containerName, signal) {
+  const expected = computeSourceHash(SCAN_SOURCE_DIR);
+  const { error, stdout } = await runCommand('docker', ['exec', containerName, 'cat', IMAGE_HASH_PATH], { signal });
+  const actual = error ? null : stdout.trim();
+
+  if (actual !== expected) {
+    throw new StaleScanImageError(
+      `${SCAN_IMAGE} is stale: its baked-in copy of backend/src/services/scan no longer matches the code ` +
+        `on disk. Rebuild it before scanning: docker build -f Dockerfile.scan-runner -t ${SCAN_IMAGE} .`,
+    );
   }
 }
 

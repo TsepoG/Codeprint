@@ -225,6 +225,13 @@ describe('FileDetailPanel', () => {
       expect(screen.getByText(/no findings recorded against this file/i)).toBeInTheDocument()
     })
 
+    it('explains an empty list on a scan that never ran findings extraction', () => {
+      renderPanel({ moduleId: 'src/index.js', findingsAvailable: false })
+
+      expect(screen.getByText(/predates per-finding capture/i)).toBeInTheDocument()
+      expect(screen.queryByText(/no findings recorded against this file/i)).not.toBeInTheDocument()
+    })
+
     it('drops the file path from each row, since the whole panel is one file', () => {
       renderPanel()
       const row = screen.getByText("'ctx' is not defined.").closest('.finding-row')

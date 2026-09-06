@@ -36,14 +36,15 @@ const CATEGORIES = {
  * @param {object} props
  * @param {string|null} props.category Which category to show; null closes the panel.
  * @param {object[]} props.findings The scan's whole `findings` array; filtered here.
- * @param {number} [props.expectedCount] What the metric tile claims, used to
- *   tell "this scan is clean" apart from "this scan predates per-finding
- *   capture" when the list comes out empty.
+ * @param {boolean} [props.findingsAvailable] Whether this scan ran per-finding
+ *   extraction at all (see `services/scan/normalize.js`'s `findingsVersion`).
+ *   False tells "this scan predates per-finding capture" apart from "this
+ *   category is genuinely clean" when the filtered list comes out empty.
  * @param {(finding: object) => boolean} [props.canViewInContext]
  * @param {(finding: object) => void} [props.onViewInContext]
  * @param {() => void} props.onClose
  */
-function FindingsPanel({ category, findings = [], expectedCount, canViewInContext, onViewInContext, onClose }) {
+function FindingsPanel({ category, findings = [], findingsAvailable = true, canViewInContext, onViewInContext, onClose }) {
   if (!category) return null
 
   const meta = CATEGORIES[category] ?? { title: 'Findings', blurb: '' }
@@ -58,7 +59,7 @@ function FindingsPanel({ category, findings = [], expectedCount, canViewInContex
       onClose={onClose}
     >
       {ranked.length === 0 ? (
-        <EmptyState title={meta.title} expectedCount={expectedCount} />
+        <EmptyState findingsAvailable={findingsAvailable} />
       ) : (
         <ul className="findings-list">
           {ranked.map((finding) => (
@@ -85,15 +86,13 @@ function FindingsPanel({ category, findings = [], expectedCount, canViewInContex
  * no findings to show for them.
  *
  * @param {object} props
- * @param {string} props.title
- * @param {number} [props.expectedCount]
+ * @param {boolean} props.findingsAvailable
  */
-function EmptyState({ title, expectedCount }) {
-  if (expectedCount > 0) {
+function EmptyState({ findingsAvailable }) {
+  if (!findingsAvailable) {
     return (
       <p className="empty-note">
-        This scan counted {expectedCount} under {title.toLowerCase()}, but recorded no individual findings -
-        it predates their capture. Re-run the scan to see them.
+        Findings are not available for this scan - it predates per-finding capture. Re-run the scan to see them.
       </p>
     )
   }

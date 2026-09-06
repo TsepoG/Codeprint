@@ -94,6 +94,13 @@ describe('InfraDetailPanel', () => {
       renderPanel({ findings: [] })
       expect(screen.getByText(/neither checkov nor tfsec flagged this resource/i)).toBeInTheDocument()
     })
+
+    it('explains an empty list on a scan that never ran findings extraction', () => {
+      renderPanel({ findings: [], findingsAvailable: false })
+
+      expect(screen.getByText(/predates per-finding capture/i)).toBeInTheDocument()
+      expect(screen.queryByText(/neither checkov nor tfsec flagged/i)).not.toBeInTheDocument()
+    })
   })
 
   describe('finding detail', () => {

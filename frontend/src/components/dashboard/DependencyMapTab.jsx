@@ -8,11 +8,12 @@ import { buildDependencyModel } from './dependencyModel.js'
  * @param {{nodes: object[], edges: object[]}} props.dependencyGraph
  * @param {object[]} [props.files] The scan's `files` array, for module stats.
  * @param {object[]} [props.findings] The scan's `findings` array.
+ * @param {boolean} [props.findingsAvailable] Whether this scan ran per-finding extraction at all.
  * @param {import('./dependencyModel.js').DependencyModel} [props.model] Built
  *   by the dashboard and shared with Hotspots; derived here when this tab is
  *   rendered on its own.
  */
-function DependencyMapTab({ dependencyGraph, files = [], findings = [], model }) {
+function DependencyMapTab({ dependencyGraph, files = [], findings = [], findingsAvailable = true, model }) {
   // The selection lives here rather than in the dashboard: following an
   // import from inside the panel re-aims it without leaving this view.
   const [selectedModule, setSelectedModule] = useState(null)
@@ -41,6 +42,7 @@ function DependencyMapTab({ dependencyGraph, files = [], findings = [], model })
         model={graphModel}
         files={files}
         findings={findings}
+        findingsAvailable={findingsAvailable}
         onSelectModule={setSelectedModule}
         onClose={() => setSelectedModule(null)}
       />

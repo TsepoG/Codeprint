@@ -13,6 +13,7 @@ const NEWER = {
   status: 'complete',
   metrics: { bugs: 1, vulnerabilities: 0, codeSmells: 0, duplicationPct: 20 },
   avgComplexity: 8,
+  findingsAvailable: true,
 }
 const OLDER = {
   id: 'older',
@@ -22,6 +23,7 @@ const OLDER = {
   status: 'complete',
   metrics: { bugs: 2, vulnerabilities: 1, codeSmells: 1, duplicationPct: 10 },
   avgComplexity: 4,
+  findingsAvailable: false,
 }
 const BROKEN = {
   id: 'broken',
@@ -117,6 +119,16 @@ describe('HistoryTab', () => {
     expect(screen.getByText('Failed')).toBeInTheDocument()
     const dashes = screen.getAllByText('—')
     expect(dashes.length).toBeGreaterThanOrEqual(5) // branch, commit, bugs, vulns, dup% for the failed row
+  })
+
+  it('labels a scan that predates per-finding extraction, rather than letting it look clean', async () => {
+    mockScansResponse([NEWER, OLDER])
+    render(<HistoryTab apiBaseUrl={API_BASE_URL} repoUrl={REPO_URL} onViewScan={() => {}} />)
+
+    await screen.findByText('1970-01-01 00:03')
+
+    expect(screen.getByText('Available')).toBeInTheDocument()
+    expect(screen.getByText('Not recorded')).toBeInTheDocument()
   })
 
   it('calls onViewScan with the scan id when its View button is clicked', async () => {

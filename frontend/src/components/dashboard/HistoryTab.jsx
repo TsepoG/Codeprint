@@ -77,6 +77,7 @@ function HistoryTab({ apiBaseUrl, repoUrl, onViewScan }) {
               <th className="numeric">Vulns</th>
               <th className="numeric">Dup %</th>
               <th>Status</th>
+              <th>Findings</th>
               <th />
             </tr>
           </thead>
@@ -97,6 +98,16 @@ function HistoryTab({ apiBaseUrl, repoUrl, onViewScan }) {
                   ) : (
                     <SeverityBadge severity="high" label="Failed" />
                   )}
+                </td>
+                <td>
+                  {scan.status === 'complete' &&
+                    (scan.findingsAvailable ? (
+                      <span className="findings-availability">Available</span>
+                    ) : (
+                      // This scan predates per-finding capture - its metrics
+                      // are real, but there's nothing to list behind them.
+                      <span className="findings-availability findings-unavailable">Not recorded</span>
+                    ))}
                 </td>
                 <td>
                   {scan.status === 'complete' && (

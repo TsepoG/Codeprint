@@ -180,7 +180,7 @@ describe('FindingsPanel', () => {
 
   describe('empty states', () => {
     it('says no issues were found for a genuinely clean category', () => {
-      renderPanel({ category: 'bug', findings: [], expectedCount: 0 })
+      renderPanel({ category: 'bug', findings: [] })
 
       expect(screen.getByText(/no issues found in this category/i)).toBeInTheDocument()
       expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
@@ -194,12 +194,12 @@ describe('FindingsPanel', () => {
       expect(screen.getByText('0 findings')).toBeInTheDocument()
     })
 
-    it('explains an empty list that contradicts the metric, rather than claiming the scan is clean', () => {
+    it('explains an empty list on a scan that never ran findings extraction, rather than claiming the scan is clean', () => {
       // A scan recorded before findings were captured still reports its old
-      // summary counts.
-      renderPanel({ category: 'bug', findings: [], expectedCount: 3 })
+      // summary counts, but the backend marks it findingsAvailable: false.
+      renderPanel({ category: 'bug', findings: [], findingsAvailable: false })
 
-      expect(screen.getByText(/predates their capture/i)).toBeInTheDocument()
+      expect(screen.getByText(/predates per-finding capture/i)).toBeInTheDocument()
       expect(screen.queryByText(/no issues found/i)).not.toBeInTheDocument()
     })
   })

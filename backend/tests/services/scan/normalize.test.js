@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeScanResults } from '../../../src/services/scan/normalize.js';
+import { FINDINGS_VERSION } from '../../../src/services/scan/findings.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, '__fixtures__');
@@ -667,6 +668,21 @@ test('findings: a scan with every tool skipped has an empty findings array, not 
   });
 
   assert.deepEqual(result.findings, []);
+});
+
+test('findings: every result is stamped with the current findings schema version', () => {
+  const result = normalizeScanResults({
+    eslintResult: { ok: false, reason: 'x' },
+    madgeResult: { ok: false, reason: 'x' },
+    jscpdResult: { ok: false, reason: 'x' },
+    auditResult: { ok: false, reason: 'x' },
+    targetDir: TARGET_DIR,
+  });
+
+  // Distinguishes "this scan ran extraction and found nothing" from "this
+  // scan predates extraction" once persisted (see db/index.js) - stamped
+  // even when every tool was skipped, since extraction itself still ran.
+  assert.equal(result.findingsVersion, FINDINGS_VERSION);
 });
 
 test('collects one warning per skipped tool, in eslint/madge/jscpd/audit order', () => {
